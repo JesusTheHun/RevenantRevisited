@@ -98,6 +98,11 @@ game data checks `REVENANT_DATA_PATH` and skips itself when it is unset
 (`GTEST_SKIP()`), as the shipped-voice cases in `test_audio_decode` do.
 CI has no game data.
 
+On Windows, `test_d3d11_shaders` compiles the public HLSL stages and checks
+tile projection and composite tint on Direct3D's WARP software device. It
+needs no window, hardware GPU, or retail data. Add new public shader stages
+to its `ShaderStages` list so runtime compilation stays covered by CI.
+
 `test_fx_source_alpha.py` is registered but disabled: its fixture predates
 the prelit RGBA5 path in `TRenderer::SubmitFxQuad`. Reports list it as
 disabled until the VFX track brings it up to date.

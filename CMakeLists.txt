@@ -454,6 +454,14 @@ target_include_directories(test_audio_decode PRIVATE
 target_compile_definitions(test_audio_decode PRIVATE SOKOL_${SOKOL_BACKEND})
 target_link_libraries(test_audio_decode PRIVATE GTest::gtest_main)
 
+if(WIN32)
+  # Compile the runtime HLSL and exercise projection/compositing on WARP;
+  # no window, hardware GPU, or retail game data is required.
+  add_executable(test_d3d11_shaders tools/test_d3d11_shaders.cpp)
+  target_compile_definitions(test_d3d11_shaders PRIVATE SOKOL_D3D11)
+  target_link_libraries(test_d3d11_shaders PRIVATE GTest::gtest_main d3d11 d3dcompiler)
+endif()
+
 # ----------------------------------------------------------------------------
 # revsmk — clean-room Smacker (SMK2) decoder. Self-contained (C++ stdlib only),
 # so it's a standalone static lib the engine and the smkdump tool both link.
@@ -539,6 +547,10 @@ foreach(test IN ITEMS
     test_shadowplan)
   gtest_discover_tests(${test} TEST_PREFIX "${test}." DISCOVERY_MODE PRE_TEST)
 endforeach()
+
+if(TARGET test_d3d11_shaders)
+  gtest_discover_tests(test_d3d11_shaders TEST_PREFIX "test_d3d11_shaders." DISCOVERY_MODE PRE_TEST)
+endif()
 
 # Source-slice tests: each compiles a function cut from src/ into a small
 # fixture with clang++ and runs it. POSIX hosts only.
