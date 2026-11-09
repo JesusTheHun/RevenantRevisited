@@ -6,6 +6,7 @@ protected:
         ScrollPane.Close(); BookPane.Close(); PlayScreen = {};
         fonts.missing = false; TMulti::missingArchive = false; TMulti::missingPaper = false;
         textDraws.clear(); renderer.paperDraws = 0;
+        DialogList.entries.clear();
     }
     void TearDown() override { ScrollPane.Close(); BookPane.Close(); }
     static TScroll Content(int count, const char* type = "Scroll") {
@@ -116,6 +117,24 @@ TEST_F(ScrollReader, CanonicalWordWrappingDeterminesPagination) {
     EXPECT_TRUE(std::all_of(textDraws.begin(), textDraws.end(), [](const auto& draw) {
         return !draw.text.empty() && draw.text.size() <= 43;
     }));
+}
+
+TEST_F(ScrollReader, LocalizesKnownTagsAndPreservesLiteralText) {
+    DialogList.entries.push_back({"MGCSCRL1", "Magic instructions\nFire Flash"});
+    TScroll scroll;
+    scroll.text = "MGCSCRL1";
+    Read(scroll);
+    ScrollPane.Compose();
+    ASSERT_EQ(textDraws.size(), 2);
+    EXPECT_EQ(textDraws[0].text, "Magic instructions");
+    EXPECT_EQ(textDraws[1].text, "Fire Flash");
+    PlayScreen.Finish();
+    textDraws.clear();
+    scroll.text = "A short note";
+    Read(scroll);
+    ScrollPane.Compose();
+    ASSERT_EQ(textDraws.size(), 1);
+    EXPECT_EQ(textDraws[0].text, "A short note");
 }
 
 TEST_F(ScrollReader, ExitDefersCleanupAndReaderCanReopen) {

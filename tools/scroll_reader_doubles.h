@@ -52,6 +52,16 @@ public:
 };
 inline TFontTable fonts;
 inline TFontTable* FontTable = &fonts;
+struct TDialogList {
+    std::vector<std::pair<std::string, std::string>> entries;
+    int32_t FindLine(const char* tag) const {
+        for (size_t i = 0; i < entries.size(); ++i)
+            if (entries[i].first == tag) return static_cast<int32_t>(i);
+        return -1;
+    }
+    const char* GetLine(int32_t id) const { return entries.at(id).second.c_str(); }
+};
+inline TDialogList DialogList;
 inline float TextLineHeight(const SFontAtlas*) { return 18; }
 enum class ETextEncoding { Windows1252, Utf8 };
 inline constexpr auto kGameTextEncoding = ETextEncoding::Windows1252;

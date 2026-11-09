@@ -7,6 +7,7 @@
 #include "revenant.h"
 #include "scroll.h"
 #include "display.h"
+#include "dialog.h"
 #include "renderer.h"
 #include "bitmap.h"
 #include "font.h"
@@ -219,6 +220,13 @@ void TScrollPane::SetScroll(PTScroll scroll)
 {
     // The object may be deleted by a subsequent load; the reader owns its text.
     text = scroll && scroll->GetText() ? scroll->GetText() : "";
+    // Retail scrolls can store a short language-table tag instead of prose.
+    if (!text.empty() && text.size() < 16)
+    {
+        const int32_t id = DialogList.FindLine(text.c_str());
+        if (id >= 0)
+            text = DialogList.GetLine(id);
+    }
     LayoutText();
 }
 
