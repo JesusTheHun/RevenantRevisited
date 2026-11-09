@@ -30,6 +30,7 @@ struct vs_in {
     float4 w2     : TEXCOORD3;
     float4 w3     : TEXCOORD4;
     float4 tint   : TEXCOORD5;
+    float4 inst_obj_id : TEXCOORD6;
     float2 uv_offset : TEXCOORD7;
     float retail_mode : TEXCOORD8;
 };
@@ -43,6 +44,7 @@ struct vs_out {
     float3 retail_color : TEXCOORD5;
     float retail_mode : TEXCOORD6;
     float height : TEXCOORD7;     // above the instance's origin (its base), world units
+    nointerpolation float4 obj_id : TEXCOORD8;
 };
 vs_out main_vs(vs_in i) {
     // w0..w3 are rows of a 4x4 world matrix (backend-neutral layout).
@@ -71,6 +73,7 @@ vs_out main_vs(vs_in i) {
         o.wnormal = wn;
         o.uv      = i.uv + i.uv_offset;
         o.tint    = i.tint;
+        o.obj_id  = i.inst_obj_id;
         o.scene_z = scene_z_n;
         o.retail_color = retail_color;
         o.retail_mode = i.retail_mode;
@@ -101,6 +104,7 @@ vs_out main_vs(vs_in i) {
     o.wnormal = wn;
     o.uv      = i.uv + i.uv_offset;
     o.tint    = i.tint;
+    o.obj_id  = i.inst_obj_id;
     o.scene_z = scene_z_n;
     o.retail_color = retail_color;
     o.retail_mode = i.retail_mode;
@@ -122,6 +126,7 @@ struct vs_out {
     float3 retail_color : TEXCOORD5;
     float retail_mode : TEXCOORD6;
     float height : TEXCOORD7;     // above the instance's origin (its base), world units
+    nointerpolation float4 obj_id : TEXCOORD8;
 };
 struct fs_out { float4 albedo  : SV_Target0;
                 float4 normal  : SV_Target1;
@@ -153,7 +158,7 @@ fs_out main_ps(vs_out in_) {
     // object at its base).
     o.normal  = float4(N * 0.5 + 0.5, in_.retail_mode > 0.5 ? 2.0 : -max(in_.height, 0.0));
     o.scene_z = float4(in_.scene_z, 0.0, 0.0, 1.0);
-    o.obj_id  = float4(0.0, 0.0, 0.0, 0.0);   // Phase 1: empty id
+    o.obj_id  = in_.obj_id;
     return o;
 }
 )HLSL";
@@ -173,6 +178,7 @@ struct vs_out {
     float3 retail_color : TEXCOORD5;
     float retail_mode : TEXCOORD6;
     float height : TEXCOORD7;     // above the instance's origin (its base), world units
+    nointerpolation float4 obj_id : TEXCOORD8;
 };
 void main_ps(vs_out in_) {
     float4 texel = albedo_tex.Sample(smp, in_.uv);
@@ -209,6 +215,7 @@ struct vs_out {
     float3 retail_color : TEXCOORD5;
     float retail_mode : TEXCOORD6;
     float height : TEXCOORD7;     // above the instance's origin (its base), world units
+    nointerpolation float4 obj_id : TEXCOORD8;
 };
 float4 main_ps(vs_out in_) : SV_Target0 {
     float4 texel = albedo_tex.Sample(smp, in_.uv);

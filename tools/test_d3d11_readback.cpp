@@ -4,11 +4,14 @@
 #undef SOKOL_IMPL
 #undef SOKOL_GFX_IMPL
 #include "../src/renderer_readback.h"
+#include "../src/shaders/mesh.hlsl.h"
+#include <d3dcompiler.h>
 #include <wrl/client.h>
 #include <gtest/gtest.h>
 #include <array>
 #include <chrono>
 #include <thread>
+#include <stdexcept>
 
 namespace {
 using Microsoft::WRL::ComPtr;
@@ -85,4 +88,184 @@ TEST_F(D3D11Readback, AsyncSlotsDeliverOnceAndCanBeReused)
         EXPECT_FALSE(RendererReadback::PollReadRect(0, output.data(), 4));
     }
 }
+ComPtr<ID3DBlob> CompileMeshShader(const char* source, const char* entry, const char* profile)
+{
+    ComPtr<ID3DBlob> code, errors;
+    const HRESULT result = D3DCompile(source, std::strlen(source), "mesh-picking", nullptr, nullptr,
+                                     entry, profile,
+                                     D3DCOMPILE_PACK_MATRIX_COLUMN_MAJOR | D3DCOMPILE_OPTIMIZATION_LEVEL3,
+                                     0, &code, &errors);
+    if (FAILED(result))
+        throw std::runtime_error(errors ? static_cast<const char*>(errors->GetBufferPointer())
+                                        : "Mesh shader compilation failed");
+    return code;
+}
+
+// Execute the shipped mesh shaders, not a test shader that writes a chosen
+// color: the readback bridge alone cannot catch a missing instance-id output.
+class D3D11MeshPicking : public D3D11Readback, public testing::WithParamInterface<int>
+{
+protected:
+    std::array<sg_image, 4> targets{};
+    sg_image albedo{};
+
+    void TearDown() override
+    {
+        context->OMSetRenderTargets(0, nullptr, nullptr);
+        for (sg_image target : targets) sg_destroy_image(target);
+        sg_destroy_image(albedo);
+        D3D11Readback::TearDown();
+    }
+
+    void Render(bool opaque)
+    {
+        const auto vsCode = CompileMeshShader(kMeshVsHlsl, "main_vs", "vs_4_0");
+        const auto psCode = CompileMeshShader(kMeshFsHlsl, "main_ps", "ps_4_0");
+        ComPtr<ID3D11VertexShader> vs;
+        ComPtr<ID3D11PixelShader> ps;
+        ASSERT_TRUE(SUCCEEDED(device->CreateVertexShader(vsCode->GetBufferPointer(), vsCode->GetBufferSize(), nullptr, &vs)));
+        ASSERT_TRUE(SUCCEEDED(device->CreatePixelShader(psCode->GetBufferPointer(), psCode->GetBufferSize(), nullptr, &ps)));
+
+        std::array<ComPtr<ID3D11RenderTargetView>, 4> views;
+        std::array<ID3D11RenderTargetView*, 4> rawViews{};
+        for (size_t n = 0; n < targets.size(); ++n)
+        {
+            sg_image_desc desc{};
+            desc.width = desc.height = 8;
+            desc.render_target = true;
+            desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+            targets[n] = sg_make_image(&desc);
+            auto* texture = static_cast<ID3D11Texture2D*>(const_cast<void*>(sg_d3d11_query_image_handle(targets[n])));
+            ASSERT_NE(texture, nullptr);
+            ASSERT_TRUE(SUCCEEDED(device->CreateRenderTargetView(texture, nullptr, &views[n])));
+            rawViews[n] = views[n].Get();
+            const float clear[4]{};
+            context->ClearRenderTargetView(rawViews[n], clear);
+        }
+
+        const uint8_t texel[4] = {255, 255, 255, uint8_t(opaque ? 255 : 0)};
+        sg_image_desc desc{};
+        desc.width = desc.height = 1;
+        desc.pixel_format = SG_PIXELFORMAT_RGBA8;
+        desc.data.subimage[0][0] = {texel, sizeof(texel)};
+        albedo = sg_make_image(&desc);
+        auto* texture = static_cast<ID3D11Texture2D*>(const_cast<void*>(sg_d3d11_query_image_handle(albedo)));
+        ComPtr<ID3D11ShaderResourceView> srv;
+        ASSERT_TRUE(SUCCEEDED(device->CreateShaderResourceView(texture, nullptr, &srv)));
+
+        // Two adjacent instances of the same quad. The instance layout is
+        // renderer.cpp's 28-float row, including all four packed id bytes.
+        struct Vertex { float pos[3], normal[3], uv[2]; };
+        std::array<Vertex, 6> vertices{};
+        const float corners[6][2] = {{-1.5f,-1.5f}, {1.5f,-1.5f}, {-1.5f,1.5f},
+                                     {-1.5f,1.5f}, {1.5f,-1.5f}, {1.5f,1.5f}};
+        const bool projected = GetParam() == 2;
+        for (size_t i = 0; i < vertices.size(); ++i)
+        {
+            const float s = corners[i][0], t = corners[i][1];
+            vertices[i] = projected ? Vertex{{s / 1.41421356f, -t / 1.41421356f, 0}, {0,0,1}, {.5f,.5f}}
+                                    : Vertex{{s * .5f + t, t - s * .5f, 0}, {0,0,1}, {.5f,.5f}};
+        }
+        const uint32_t ids[2] = {0x81234567u, 0xFEDCBA98u};
+        float instances[2][28]{};
+        for (int n = 0; n < 2; ++n)
+        {
+            auto& row = instances[n];
+            row[0] = row[5] = row[10] = row[15] = 1;
+            const float x = n == 0 ? 2.0f : 6.0f;
+            row[3] = projected ? x / 1.41421356f : x * .5f + 4;
+            row[7] = projected ? -4 / 1.41421356f : 4 - x * .5f;
+            for (int c = 0; c < 4; ++c)
+            {
+                row[16 + c] = 1;
+                row[20 + c] = float((ids[n] >> (c * 8)) & 255u) / 255.0f;
+            }
+        }
+        const D3D11_INPUT_ELEMENT_DESC elements[] = {
+            {"POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,0,D3D11_INPUT_PER_VERTEX_DATA,0},
+            {"NORMAL",0,DXGI_FORMAT_R32G32B32_FLOAT,0,12,D3D11_INPUT_PER_VERTEX_DATA,0},
+            {"TEXCOORD",0,DXGI_FORMAT_R32G32_FLOAT,0,24,D3D11_INPUT_PER_VERTEX_DATA,0},
+            {"TEXCOORD",1,DXGI_FORMAT_R32G32B32A32_FLOAT,1,0,D3D11_INPUT_PER_INSTANCE_DATA,1},
+            {"TEXCOORD",2,DXGI_FORMAT_R32G32B32A32_FLOAT,1,16,D3D11_INPUT_PER_INSTANCE_DATA,1},
+            {"TEXCOORD",3,DXGI_FORMAT_R32G32B32A32_FLOAT,1,32,D3D11_INPUT_PER_INSTANCE_DATA,1},
+            {"TEXCOORD",4,DXGI_FORMAT_R32G32B32A32_FLOAT,1,48,D3D11_INPUT_PER_INSTANCE_DATA,1},
+            {"TEXCOORD",5,DXGI_FORMAT_R32G32B32A32_FLOAT,1,64,D3D11_INPUT_PER_INSTANCE_DATA,1},
+            {"TEXCOORD",6,DXGI_FORMAT_R32G32B32A32_FLOAT,1,80,D3D11_INPUT_PER_INSTANCE_DATA,1},
+            {"TEXCOORD",7,DXGI_FORMAT_R32G32_FLOAT,1,96,D3D11_INPUT_PER_INSTANCE_DATA,1},
+            {"TEXCOORD",8,DXGI_FORMAT_R32_FLOAT,1,104,D3D11_INPUT_PER_INSTANCE_DATA,1},
+        };
+        ComPtr<ID3D11InputLayout> layout;
+        ASSERT_TRUE(SUCCEEDED(device->CreateInputLayout(elements, UINT(std::size(elements)),
+                                                        vsCode->GetBufferPointer(), vsCode->GetBufferSize(), &layout)));
+        auto buffer = [&](const void* data, UINT bytes, UINT bind) {
+            ComPtr<ID3D11Buffer> result;
+            D3D11_BUFFER_DESC bd{};
+            bd.ByteWidth = bytes; bd.Usage = D3D11_USAGE_IMMUTABLE; bd.BindFlags = bind;
+            D3D11_SUBRESOURCE_DATA initial{data, 0, 0};
+            if (FAILED(device->CreateBuffer(&bd, &initial, &result)))
+                throw std::runtime_error("Could not create mesh test buffer");
+            return result;
+        };
+        const auto vb = buffer(vertices.data(), sizeof(vertices), D3D11_BIND_VERTEX_BUFFER);
+        const auto ib = buffer(instances, sizeof(instances), D3D11_BIND_VERTEX_BUFFER);
+        float uniforms[20] = {0,0,8,8, 0,2000,1000,GetParam() == 1 ? 1.0f : 0.0f,
+                               0,0,1,projected ? 1.0f : 0.0f, 1,1,1,0, 0,0,0,0};
+        const auto cb = buffer(uniforms, sizeof(uniforms), D3D11_BIND_CONSTANT_BUFFER);
+        D3D11_RASTERIZER_DESC rasterDesc{};
+        rasterDesc.FillMode = D3D11_FILL_SOLID;
+        rasterDesc.CullMode = D3D11_CULL_NONE;
+        ComPtr<ID3D11RasterizerState> raster;
+        ASSERT_TRUE(SUCCEEDED(device->CreateRasterizerState(&rasterDesc, &raster)));
+        D3D11_SAMPLER_DESC samplerDesc{};
+        samplerDesc.Filter = D3D11_FILTER_MIN_MAG_MIP_POINT;
+        samplerDesc.AddressU = samplerDesc.AddressV = samplerDesc.AddressW = D3D11_TEXTURE_ADDRESS_CLAMP;
+        ComPtr<ID3D11SamplerState> sampler;
+        ASSERT_TRUE(SUCCEEDED(device->CreateSamplerState(&samplerDesc, &sampler)));
+        ID3D11Buffer* buffers[] = {vb.Get(), ib.Get()};
+        const UINT strides[] = {sizeof(Vertex), sizeof(instances[0])}, offsets[] = {0,0};
+        ID3D11Buffer* constant = cb.Get();
+        ID3D11ShaderResourceView* resource = srv.Get();
+        ID3D11SamplerState* sample = sampler.Get();
+        const D3D11_VIEWPORT viewport{0,0,8,8,0,1};
+        context->OMSetRenderTargets(4, rawViews.data(), nullptr);
+        context->RSSetViewports(1, &viewport);
+        context->RSSetState(raster.Get());
+        context->IASetInputLayout(layout.Get());
+        context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        context->IASetVertexBuffers(0, 2, buffers, strides, offsets);
+        context->VSSetShader(vs.Get(), nullptr, 0);
+        context->VSSetConstantBuffers(0, 1, &constant);
+        context->PSSetShader(ps.Get(), nullptr, 0);
+        context->PSSetShaderResources(0, 1, &resource);
+        context->PSSetSamplers(0, 1, &sample);
+        context->DrawInstanced(6, 2, 0, 0);
+        context->OMSetRenderTargets(0, nullptr, nullptr);
+        context->Flush();
+    }
+};
+
+TEST_P(D3D11MeshPicking, InstanceIdsReachPickingTarget)
+{
+    Render(true);
+    const uint8_t expected[2][4] = {{0x67,0x45,0x23,0x81}, {0x98,0xBA,0xDC,0xFE}};
+    for (int n = 0; n < 2; ++n)
+    {
+        std::array<uint8_t, 4> output{};
+        ASSERT_TRUE(RendererReadback::ReadPixel(targets[3], n == 0 ? 2 : 6, 4, output.data()));
+        EXPECT_EQ(output, (std::array<uint8_t,4>{expected[n][0],expected[n][1],expected[n][2],expected[n][3]}));
+    }
+}
+
+TEST_P(D3D11MeshPicking, TransparentTexelsLeavePickingTargetClear)
+{
+    Render(false);
+    std::array<uint8_t, 4> output{};
+    ASSERT_TRUE(RendererReadback::ReadPixel(targets[3], 2, 4, output.data()));
+    EXPECT_EQ(output, (std::array<uint8_t,4>{0,0,0,0}));
+}
+
+INSTANTIATE_TEST_SUITE_P(Projection, D3D11MeshPicking, testing::Values(0,1,2),
+    [](const testing::TestParamInfo<int>& p) {
+        return p.param == 0 ? "Orthographic" : p.param == 1 ? "Perspective" : "ProjectedProxy";
+    });
 } // namespace
