@@ -3278,7 +3278,7 @@ static void AppEvent(const sapp_event* ev)
         break;
       }
 
-      // No MOUSE_ENTER / MOUSE_LEAVE handlers for cursor swapping. The
+      // macOS handles native cursor swapping itself. The
       // platform layer (src/platform/macosx/cursor.mm) installs its own
       // NSTrackingArea with NSTrackingActiveAlways + NSTrackingCursorUpdate
       // on the sokol contentView, so AppKit drives cursor swaps via
@@ -3303,6 +3303,13 @@ static void AppEvent(const sapp_event* ev)
         InputQueue.PushMove((int32_t)ev->mouse_x, (int32_t)ev->mouse_y);
         break;
       }
+
+      case SAPP_EVENTTYPE_MOUSE_ENTER:
+        SetCursorInsideWindow(true);
+        break;
+      case SAPP_EVENTTYPE_MOUSE_LEAVE:
+        SetCursorInsideWindow(false);
+        break;
 
       case SAPP_EVENTTYPE_MOUSE_DOWN:
       case SAPP_EVENTTYPE_MOUSE_UP:

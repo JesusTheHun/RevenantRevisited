@@ -71,10 +71,8 @@ class TGameModeImpl final : public IRuntimeMode
         // that's the OS arrow via NSCursor; in fullscreen we re-show
         // sokol_app's cursor (we hid it in OnEnter) so the next mode
         // isn't left with an invisible pointer.
-        if (Windowed)
-            rev_platform::ResetOSCursor();
-        else
-            sapp_show_mouse(true);
+        rev_platform::ResetOSCursor();
+        sapp_show_mouse(true);
     }
 
   private:
@@ -93,7 +91,10 @@ class TGameModeImpl final : public IRuntimeMode
         if (imgui_owns_mouse != imgui_had_mouse_last_tick)
         {
             if (imgui_owns_mouse)
+            {
                 rev_platform::ResetOSCursor();
+                sapp_show_mouse(true);
+            }
             else
                 RefreshOSCursor();
             imgui_had_mouse_last_tick = imgui_owns_mouse;
@@ -199,6 +200,8 @@ class TEditorModeImpl final : public IRuntimeMode
         // one). Reset to the default arrow explicitly so the editor's
         // entry state is independent of whatever game mode left.
         rev_platform::ResetOSCursor();
+
+        sapp_show_mouse(true);
 
         // Restore the editor's own camera. Otherwise we'd inherit
         // whatever camera position game mode last set (= Locke's last

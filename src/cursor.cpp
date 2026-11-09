@@ -42,6 +42,12 @@ static PTBitmap g_os_cursor_shown = nullptr;
 // game cursor bitmap in-frame at (cursorx, cursory). Toggled via
 // SetHardwareCursorEnabled (see cursor.h). Default: hardware cursor enabled.
 static bool g_hw_cursor_enabled = true;
+static bool g_cursor_inside_window = true;
+
+void SetCursorInsideWindow(bool inside)
+{
+    g_cursor_inside_window = inside;
+}
 
 PTBitmap DragBitmap = nullptr;
 int32_t grabx, graby;
@@ -85,14 +91,14 @@ void SetMouseBitmap(PTBitmap cursor)
     if (cursor && Windowed && g_hw_cursor_enabled)
     {
         g_os_cursor_owns_pixels = rev_platform::SetOSCursor(cursor, cursor->regx, cursor->regy);
-        if (!g_os_cursor_owns_pixels)
-            log_warn("[cursor] SetOSCursor declined; falling back to in-game draw");
     }
     else
     {
         g_os_cursor_owns_pixels = false;
     }
     g_os_cursor_shown = g_os_cursor_owns_pixels ? cursor : nullptr;
+    // A declined native handoff uses the in-frame sprite, not an OS arrow.
+    sapp_show_mouse(Editor || g_os_cursor_owns_pixels);
 }
 
 void SetHardwareCursorEnabled(bool enabled)
@@ -103,7 +109,6 @@ void SetHardwareCursorEnabled(bool enabled)
         // Re-show the OS pointer and re-push the current cursor pixels so the
         // OS owns the pointer again; TCursorHud then suppresses its in-frame
         // draw (RefreshOSCursor sets g_os_cursor_owns_pixels on success).
-        sapp_show_mouse(true);
         RefreshOSCursor();
     }
     else
@@ -123,12 +128,7 @@ bool HardwareCursorEnabled()
 
 void RefreshOSCursor()
 {
-    if (MouseCursor && Windowed && g_hw_cursor_enabled)
-    {
-        g_os_cursor_owns_pixels = rev_platform::SetOSCursor(
-            MouseCursor, MouseCursor->regx, MouseCursor->regy);
-        g_os_cursor_shown = g_os_cursor_owns_pixels ? MouseCursor : nullptr;
-    }
+    SetMouseBitmap(MouseCursor);
 }
 
 void SetMouseShadow(PTBitmap shadow, int32_t offsetx, int32_t offsety)
@@ -215,7 +215,7 @@ void TCursorHud::Draw()
     // Renderer invokes this inside the swapchain pass between the
     // 3D scene present and the ImGui debug overlay. We're inside an
     // active pass -- can issue Renderer->DrawBitmap calls directly.
-    if (!Renderer) return;
+    if (!Renderer || (g_hw_cursor_enabled && (!AppActive || !g_cursor_inside_window))) return;
 
     // Suppress the game-side overlay while ImGui owns the mouse. The
     // OS cursor still draws the pointer pixel (we reset it to the
@@ -273,7 +273,8 @@ void TCursorHud::Draw()
         g_os_cursor_shown = g_os_cursor_owns_pixels ? shown : nullptr;
     }
     if (shown && !g_os_cursor_owns_pixels)
-        Renderer->DrawBitmap(shown, cursorx, cursory);
+        Renderer->DrawBitmap(shown, cursorx - shown->regx, cursory - shown->regy,
+                             EBitmapDecode::PixelsAndAlias);
 }
 
 // REVSYNC: the tail of retail's cursor draw (0x0043a480): a released drag
