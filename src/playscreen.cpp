@@ -1824,6 +1824,15 @@ void TPlayScreen::MouseClick(int32_t button, int32_t x, int32_t y)
         CurrentMode()->HandleMouseClick(button, x, y);
 }
 
+void TPlayScreen::MouseWheel(int32_t units, int32_t x, int32_t y)
+{
+    if (ModalHas(MODAL_MOUSE) || GameFlow.Session().Loading() || Editor ||
+        AutoMap.IsHidden() || !AutoMap.IsOpen()) return;
+    if (x >= AutoMap.GetPosX() && x < AutoMap.GetPosX() + AutoMap.GetWidth() &&
+        y >= AutoMap.GetPosY() && y < AutoMap.GetPosY() + AutoMap.GetHeight())
+        AutoMap.ScrollZoom(units);
+}
+
 void TPlayScreen::MouseMove(int32_t button, int32_t x, int32_t y)
 {
     if (ModalHas(MODAL_MOUSE))

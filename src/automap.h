@@ -103,6 +103,7 @@ class TAutoMap final : public TPane
     [[nodiscard]] int32_t Zoom() const { return zoom; }
     [[nodiscard]] bool ZoomInHeld() const { return zoomin; }
     [[nodiscard]] bool ZoomOutHeld() const { return zoomout; }
+    void ScrollZoom(int32_t units);
 
   private:
     struct STile
@@ -148,6 +149,7 @@ class TAutoMap final : public TPane
     int32_t cachelevel = 0;                     // the level the ring holds (+0x12c)
     int32_t scrollx = 0, scrolly = 0;           // the window's top-left, mosaic px (+0x11c / +0x120)
     int32_t zoom = 100;                         // percent (+0x130)
+    int32_t wheelRemainder = 0;
     int32_t playerx = 0, playery = 0;           // the player's map-screen point (+0x138 / +0x140)
     int32_t prevplayerx = 0, prevplayery = 0;   // at the last RecordTravels (+0x134 / +0x13c)
     bool zoomin = false;                        // "+" held (+0x9c)

@@ -136,8 +136,19 @@ class End:
         return {'t': self.t, 'end': True}
 
 
-Event = Key | Char | Mouse
-Item = Key | Char | Mouse | Frame | Check | Mark | End
+@dataclass(frozen=True)
+class Wheel:
+    t: int
+    x: int
+    y: int
+    units: int
+
+    def line(self) -> dict:
+        return {'t': self.t, 'mouse': [self.x, self.y], 'wheel': self.units}
+
+
+Event = Key | Char | Mouse | Wheel
+Item = Key | Char | Mouse | Wheel | Frame | Check | Mark | End
 
 
 def _int(obj: dict, name: str) -> int:
@@ -184,6 +195,11 @@ def parse_item(obj: dict, timing: str = 'lockstep') -> Item:
         if (not isinstance(pos, list) or len(pos) != 2
                 or not all(isinstance(v, int) and not isinstance(v, bool) for v in pos)):
             raise FormatError(f'mouse must be [x, y]: {obj}')
+        if 'wheel' in obj:
+            units = _int(obj, 'wheel')
+            if not -(1 << 31) <= units < (1 << 31):
+                raise FormatError(f'wheel units out of range: {obj}')
+            return Wheel(t, pos[0], pos[1], units)
         buttons = _int(obj, 'buttons')
         if buttons & ~BUTTONS_ALL:
             raise FormatError(f'unknown button bits: {obj}')
@@ -193,7 +209,7 @@ def parse_item(obj: dict, timing: str = 'lockstep') -> Item:
 
 def item_line(item: Item, timing: str = 'lockstep') -> dict:
     line = item.line()
-    if timing == 'frames' and isinstance(item, (Key, Char, Mouse)):
+    if timing == 'frames' and isinstance(item, (Key, Char, Mouse, Wheel)):
         line['f'] = line.pop('t')
     return line
 
@@ -211,7 +227,7 @@ class Recording:
 
     @property
     def events(self) -> list[Event]:
-        return [i for i in self.items if isinstance(i, (Key, Char, Mouse))]
+        return [i for i in self.items if isinstance(i, (Key, Char, Mouse, Wheel))]
 
     @property
     def checks(self) -> dict[int, dict]:
@@ -270,7 +286,7 @@ def validate(rec: Recording) -> list[str]:
     last = {'t': -1, 'f': -1}
     for item in rec.items:
         key = 'f' if isinstance(item, Frame) or (rec.timing == 'frames'
-                                                 and isinstance(item, (Key, Char, Mouse))) else 't'
+                                                 and isinstance(item, (Key, Char, Mouse, Wheel))) else 't'
         when = item.f if isinstance(item, Frame) else item.t
         if when < last[key]:
             problems.append(f'{key}={when} goes back in time: {item_line(item, rec.timing)}')

@@ -27,6 +27,16 @@ class RecordingFormat(unittest.TestCase):
         self.assertEqual(loaded.checks, {24: {'pos': [1, 2, 3], 'draws': 9}})
         self.assertEqual(rec.validate(loaded), [])
 
+    def test_wheel_roundtrips_without_changing_held_buttons(self):
+        events = [rec.Mouse(0, 500, 400, rec.BUTTON_RIGHT), rec.Wheel(1, 500, 400, 120),
+                  rec.Wheel(2, 500, 400, -60), rec.Mouse(3, 500, 400, 0)]
+        for timing in ('lockstep', 'frames'):
+            loaded = self.roundtrip(rec.Recording(dict(HEADER, timing=timing), events))
+            self.assertEqual(loaded.events, events)
+        for units in (True, 1.5, 1 << 31):
+            with self.assertRaises(rec.FormatError):
+                rec.parse_item({'t': 0, 'mouse': [500, 400], 'wheel': units})
+
     def test_frame_timing_keys_events_by_frame_and_keeps_exact_dt(self):
         dt = 0.016666666666666666
         items = [rec.Frame(0, dt), rec.Key(0, 'A', True), rec.Frame(1, 0.1), rec.Check(2, {'draws': 1})]

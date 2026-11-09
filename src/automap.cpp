@@ -307,6 +307,7 @@ bool TAutoMap::Initialize()
     cachelevel = 0;
     scrollx = scrolly = 0;
     zoom = kZoomMin;
+    wheelRemainder = 0;
     fogofwar = true;
     markerframe = 0;
     lastmousex = lastmousey = 0;
@@ -698,6 +699,22 @@ void TAutoMap::ComposeFrame(int32_t target_w, int32_t target_h)
         Renderer->DrawBitmapToTarget(plussel, kPlusLeft, kButtonTop, target_w, target_h);
     if (zoomout)
         Renderer->DrawBitmapToTarget(minussel, kMinusLeft, kButtonTop, target_w, target_h);
+}
+
+void TAutoMap::ScrollZoom(int32_t units)
+{
+    const int64_t accumulated = int64_t(wheelRemainder) + units;
+    const int32_t centrex = scrollx + HalfSpan(), centrey = scrolly + HalfSpan();
+    zoom = int32_t((std::clamp)(int64_t(zoom) + accumulated / 120 * kZoomStep,
+                              int64_t(kZoomMin), int64_t(kZoomMax)));
+    wheelRemainder = int32_t(accumulated % 120);
+    if (freescroll)
+    {
+        scrollx = centrex - HalfSpan();
+        scrolly = centrey - HalfSpan();
+    }
+    RebuildTileCache();
+    SetDirty(true);
 }
 
 void TAutoMap::MouseClick(int32_t button, int32_t x, int32_t y)

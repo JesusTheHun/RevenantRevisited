@@ -25,7 +25,7 @@ class TScreen;
 // moves, presses and releases from the change in pointer state.
 struct SInputEvent
 {
-    enum class EKind : uint8_t { Key, Char, Pointer };
+    enum class EKind : uint8_t { Key, Char, Pointer, Wheel };
 
     static constexpr int32_t kButtonLeft   = 1 << 0;
     static constexpr int32_t kButtonRight  = 1 << 1;
@@ -42,6 +42,8 @@ struct SInputEvent
     [[nodiscard]] static SInputEvent Key(int32_t vk, bool down);
     [[nodiscard]] static SInputEvent Char(int32_t code);
     [[nodiscard]] static SInputEvent Pointer(int32_t x, int32_t y, int32_t buttons);
+    // 120 units per wheel notch; fractional trackpad motion is preserved.
+    [[nodiscard]] static SInputEvent Wheel(int32_t units, int32_t x, int32_t y);
 };
 
 class TInputQueue

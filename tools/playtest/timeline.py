@@ -106,7 +106,7 @@ def rows(bundle: Path) -> tuple[dict, list[tuple[int, int, str, str]]]:
         recorded = rec.Recording.load(recording)
         header = recorded.header
         for item in recorded.items:
-            if isinstance(item, (rec.Key, rec.Char, rec.Mouse)):
+            if isinstance(item, (rec.Key, rec.Char, rec.Mouse, rec.Wheel)):
                 add(item.t, 'input', _esc(json.dumps(item.line())))
             elif isinstance(item, rec.Check):
                 add(item.t, 'check', _esc(' · '.join(f'{k} {v}' for k, v in item.fields.items())))

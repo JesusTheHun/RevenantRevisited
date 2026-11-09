@@ -160,6 +160,10 @@ void WriteEventFields(JsonOut& out, const SInputEvent& event)
       case SInputEvent::EKind::Char:
         out.Field("char", event.code);
         break;
+      case SInputEvent::EKind::Wheel:
+        out.Field("wheel", event.code);
+        out.Key("mouse").Begin('[').Value(event.x).Value(event.y).End(']');
+        break;
       case SInputEvent::EKind::Pointer:
         out.Key("mouse").Begin('[').Value(event.x).Value(event.y).End(']');
         out.Field("buttons", event.buttons);
@@ -204,6 +208,17 @@ bool ReadEventFields(const JsonValue& line, SInputEvent& event, std::string& err
         {
             error = "mouse must be [x, y]";
             return false;
+        }
+        if (line.Has("wheel"))
+        {
+            const int64_t units = line["wheel"].Int();
+            if (!line["wheel"].IsInt() || units < INT32_MIN || units > INT32_MAX)
+            {
+                error = "wheel must be an integer number of 1/120-notch units";
+                return false;
+            }
+            event = SInputEvent::Wheel(int32_t(units), int32_t(pos[0].Int()), int32_t(pos[1].Int()));
+            return true;
         }
         if (!line["buttons"].IsInt() || buttons < 0 || (buttons & ~SInputEvent::kButtonsAll))
         {

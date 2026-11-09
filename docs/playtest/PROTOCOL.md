@@ -38,6 +38,10 @@ Hosts never synthesize input of their own, apart from the start rules in
 §5. Character translation is not implied: a typed letter is a `key` down,
 a `char`, and a `key` up, as Windows delivers it.
 
+The port also records wheel input as `"mouse": [X, Y], "wheel": UNITS`,
+with 120 units per notch (positive zooms in). It preserves event order and
+held buttons; the event acts only over the visible sidebar automap.
+
 ## 3. Check lines
 
 ```json

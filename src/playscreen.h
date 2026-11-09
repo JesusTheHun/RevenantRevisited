@@ -169,6 +169,7 @@ class TPlayScreen : public TScreen
     [[nodiscard]] EClickRoute ClickRoute(int32_t x, int32_t y);
     void MouseClick(int32_t button, int32_t x, int32_t y) override;
     void MouseMove (int32_t button, int32_t x, int32_t y) override;
+    void MouseWheel(int32_t units, int32_t x, int32_t y) override;
     void KeyPress  (int32_t key, bool down)               override;
     void Joystick  (int32_t key, bool down)               override;
     virtual void Command (GAMECOMMAND command);

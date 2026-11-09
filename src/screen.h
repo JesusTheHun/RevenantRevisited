@@ -611,6 +611,7 @@ class TScreen
     virtual void MouseClick(int32_t button, int32_t x, int32_t y);
       // Handles mouse clicks to screen. Calls TPane MouseClick functions.
     virtual void MouseMove(int32_t button, int32_t x, int32_t y);
+    virtual void MouseWheel(int32_t units, int32_t x, int32_t y) {}
       // Handles mouse movement on screen.  Calls TPane MouseMove functions.
     virtual void KeyPress(int32_t key, bool down);
       // Handles keyboard presses. Calls TPane KeyPress functions.

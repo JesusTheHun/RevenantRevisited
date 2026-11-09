@@ -28,6 +28,16 @@ SInputEvent SInputEvent::Char(int32_t code)
     return e;
 }
 
+SInputEvent SInputEvent::Wheel(int32_t units, int32_t x, int32_t y)
+{
+    SInputEvent e;
+    e.kind = EKind::Wheel;
+    e.code = units;
+    e.x = x;
+    e.y = y;
+    return e;
+}
+
 SInputEvent SInputEvent::Pointer(int32_t x, int32_t y, int32_t buttons)
 {
     SInputEvent e;
@@ -54,6 +64,7 @@ void TInputQueue::Track(SState& state, const SInputEvent& event)
         state.buttons = event.buttons;
         break;
       case SInputEvent::EKind::Char:
+      case SInputEvent::EKind::Wheel:
         break;
     }
 }
@@ -132,6 +143,11 @@ void TInputQueue::Dispatch(TScreen* screen, const SInputEvent& event)
       case SInputEvent::EKind::Char:
         if (screen)
             screen->CharPress(event.code, true);
+        return;
+
+      case SInputEvent::EKind::Wheel:
+        if (screen)
+            screen->MouseWheel(event.code, event.x, event.y);
         return;
 
       case SInputEvent::EKind::Pointer:

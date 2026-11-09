@@ -3326,6 +3326,20 @@ static void AppEvent(const sapp_event* ev)
         break;
       }
 
+      case SAPP_EVENTTYPE_MOUSE_SCROLL:
+        if (AppActive && !imgui_mouse && !TestModes::InputScriptActive())
+        {
+            // Sokol reports four scroll units per Windows wheel notch.
+#if defined(_WIN32)
+            constexpr float unitsPerScroll = 30.0f;
+#else
+            constexpr float unitsPerScroll = 120.0f;
+#endif
+            InputQueue.Push(SInputEvent::Wheel(int32_t(std::lround(ev->scroll_y * unitsPerScroll)), int32_t(std::floor(ev->mouse_x * Display.Width() / sapp_width())),
+                int32_t(std::floor(ev->mouse_y * Display.Height() / sapp_height()))));
+        }
+        break;
+
       case SAPP_EVENTTYPE_RESIZED:
       {
         // TODO(port): TDisplay is hard-coded WIDTH x HEIGHT. When the
