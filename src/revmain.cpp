@@ -3262,7 +3262,8 @@ static void AppEvent(const sapp_event* ev)
             sapp_toggle_fullscreen();
             Windowed = !sapp_is_fullscreen();
             FullScreen = !Windowed;
-            RefreshOSCursor();
+            if (CurrentScreen == &PlayScreen && !Editor)
+                RefreshOSCursor();
             break;
         }
 
