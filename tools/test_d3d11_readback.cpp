@@ -4,6 +4,7 @@
 #undef SOKOL_IMPL
 #undef SOKOL_GFX_IMPL
 #include "../src/renderer_readback.h"
+#include "../src/meshpickpipeline.h"
 #include "../src/shaders/mesh.hlsl.h"
 #include <d3dcompiler.h>
 #include <wrl/client.h>
@@ -117,7 +118,9 @@ protected:
         D3D11Readback::TearDown();
     }
 
-    void Render(bool opaque)
+    float depth_sample = 0.0f;
+
+    void Render(bool opaque, bool picking_only = false, float scene_depth = 1.0f)
     {
         const auto vsCode = CompileMeshShader(kMeshVsHlsl, "main_vs", "vs_4_0");
         const auto psCode = CompileMeshShader(kMeshFsHlsl, "main_ps", "ps_4_0");
@@ -139,7 +142,10 @@ protected:
             ASSERT_NE(texture, nullptr);
             ASSERT_TRUE(SUCCEEDED(device->CreateRenderTargetView(texture, nullptr, &views[n])));
             rawViews[n] = views[n].Get();
-            const float clear[4]{};
+            const float clear[4] = {picking_only && n < 3 ? .125f : 0,
+                                    picking_only && n < 3 ? .25f : 0,
+                                    picking_only && n < 3 ? .5f : 0,
+                                    picking_only && n < 3 ? 1.0f : 0};
             context->ClearRenderTargetView(rawViews[n], clear);
         }
 
@@ -175,6 +181,7 @@ protected:
             const float x = n == 0 ? 2.0f : 6.0f;
             row[3] = projected ? x / 1.41421356f : x * .5f + 4;
             row[7] = projected ? -4 / 1.41421356f : 4 - x * .5f;
+            if (projected) row[11] = .5f / 2.1798270608996972e-5f;
             for (int c = 0; c < 4; ++c)
             {
                 row[16 + c] = 1;
@@ -227,7 +234,38 @@ protected:
         ID3D11ShaderResourceView* resource = srv.Get();
         ID3D11SamplerState* sample = sampler.Get();
         const D3D11_VIEWPORT viewport{0,0,8,8,0,1};
-        context->OMSetRenderTargets(4, rawViews.data(), nullptr);
+        // Use the production picking descriptor for color/depth policy.
+        sg_pipeline_desc pick{};
+        ConfigureMeshPickPipeline(pick);
+        D3D11_BLEND_DESC blendDesc{};
+        blendDesc.IndependentBlendEnable = TRUE;
+        for (int n = 0; n < 4; ++n)
+            blendDesc.RenderTarget[n].RenderTargetWriteMask =
+                picking_only && pick.colors[n].write_mask == SG_COLORMASK_NONE
+                    ? 0 : D3D11_COLOR_WRITE_ENABLE_ALL;
+        ComPtr<ID3D11BlendState> blend;
+        ASSERT_TRUE(SUCCEEDED(device->CreateBlendState(&blendDesc, &blend)));
+        context->OMSetBlendState(blend.Get(), nullptr, 0xffffffffu);
+        D3D11_TEXTURE2D_DESC depthDesc{};
+        depthDesc.Width = depthDesc.Height = 8;
+        depthDesc.MipLevels = depthDesc.ArraySize = depthDesc.SampleDesc.Count = 1;
+        depthDesc.Format = DXGI_FORMAT_D32_FLOAT;
+        depthDesc.BindFlags = D3D11_BIND_DEPTH_STENCIL;
+        ComPtr<ID3D11Texture2D> depth;
+        ComPtr<ID3D11DepthStencilView> depthView;
+        ASSERT_TRUE(SUCCEEDED(device->CreateTexture2D(&depthDesc, nullptr, &depth)));
+        ASSERT_TRUE(SUCCEEDED(device->CreateDepthStencilView(depth.Get(), nullptr, &depthView)));
+        context->ClearDepthStencilView(depthView.Get(), D3D11_CLEAR_DEPTH, scene_depth, 0);
+        D3D11_DEPTH_STENCIL_DESC depthStateDesc{};
+        depthStateDesc.DepthEnable = TRUE;
+        depthStateDesc.DepthWriteMask = picking_only && !pick.depth.write_enabled
+            ? D3D11_DEPTH_WRITE_MASK_ZERO : D3D11_DEPTH_WRITE_MASK_ALL;
+        ASSERT_EQ(pick.depth.compare, SG_COMPAREFUNC_LESS_EQUAL);
+        depthStateDesc.DepthFunc = D3D11_COMPARISON_LESS_EQUAL;
+        ComPtr<ID3D11DepthStencilState> depthState;
+        ASSERT_TRUE(SUCCEEDED(device->CreateDepthStencilState(&depthStateDesc, &depthState)));
+        context->OMSetDepthStencilState(depthState.Get(), 0);
+        context->OMSetRenderTargets(4, rawViews.data(), depthView.Get());
         context->RSSetViewports(1, &viewport);
         context->RSSetState(raster.Get());
         context->IASetInputLayout(layout.Get());
@@ -241,6 +279,17 @@ protected:
         context->DrawInstanced(6, 2, 0, 0);
         context->OMSetRenderTargets(0, nullptr, nullptr);
         context->Flush();
+        depthDesc.BindFlags = 0;
+        depthDesc.Usage = D3D11_USAGE_STAGING;
+        depthDesc.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
+        ComPtr<ID3D11Texture2D> staging;
+        ASSERT_TRUE(SUCCEEDED(device->CreateTexture2D(&depthDesc, nullptr, &staging)));
+        context->CopyResource(staging.Get(), depth.Get());
+        D3D11_MAPPED_SUBRESOURCE mapped{};
+        ASSERT_TRUE(SUCCEEDED(context->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &mapped)));
+        const auto* row = static_cast<const uint8_t*>(mapped.pData) + 4 * mapped.RowPitch;
+        std::memcpy(&depth_sample, row + 2 * sizeof(float), sizeof(float));
+        context->Unmap(staging.Get(), 0);
     }
 };
 
@@ -262,6 +311,37 @@ TEST_P(D3D11MeshPicking, TransparentTexelsLeavePickingTargetClear)
     std::array<uint8_t, 4> output{};
     ASSERT_TRUE(RendererReadback::ReadPixel(targets[3], 2, 4, output.data()));
     EXPECT_EQ(output, (std::array<uint8_t,4>{0,0,0,0}));
+}
+
+TEST_P(D3D11MeshPicking, PickingUpdatesIdsWithoutChangingVisualsOrDepth)
+{
+    Render(true, true);
+    std::array<uint8_t, 4> output{};
+    ASSERT_TRUE(RendererReadback::ReadPixel(targets[3], 2, 4, output.data()));
+    EXPECT_EQ(output, (std::array<uint8_t,4>{0x67,0x45,0x23,0x81}));
+    for (int n = 0; n < 3; ++n) {
+        ASSERT_TRUE(RendererReadback::ReadPixel(targets[n], 2, 4, output.data()));
+        EXPECT_EQ(output, (std::array<uint8_t,4>{32,64,128,255}));
+    }
+    EXPECT_FLOAT_EQ(depth_sample, 1.0f);
+}
+
+TEST_P(D3D11MeshPicking, PickingRejectsTransparentPixels)
+{
+    Render(false, true);
+    std::array<uint8_t, 4> output{};
+    ASSERT_TRUE(RendererReadback::ReadPixel(targets[3], 2, 4, output.data()));
+    EXPECT_EQ(output, (std::array<uint8_t,4>{0,0,0,0}));
+    EXPECT_FLOAT_EQ(depth_sample, 1.0f);
+}
+
+TEST_P(D3D11MeshPicking, PickingKeepsMeshesBehindOpaqueSceneryHidden)
+{
+    Render(true, true, .1f);
+    std::array<uint8_t, 4> output{};
+    ASSERT_TRUE(RendererReadback::ReadPixel(targets[3], 2, 4, output.data()));
+    EXPECT_EQ(output, (std::array<uint8_t,4>{0,0,0,0}));
+    EXPECT_FLOAT_EQ(depth_sample, .1f);
 }
 
 INSTANTIATE_TEST_SUITE_P(Projection, D3D11MeshPicking, testing::Values(0,1,2),

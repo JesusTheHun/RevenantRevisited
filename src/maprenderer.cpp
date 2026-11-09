@@ -1513,6 +1513,8 @@ void SSectorDrawableInst::Submit(const SMapRenderContext& ctx, SMapRenderStats& 
             std::memcpy(blended.world, world_renderer, sizeof(blended.world));
             LoadObjectMaterial(meshimg, asset.objnum, blended);
             blended.sort_depth = CameraDepth({ mesh_world.x - mesh_camera.x, mesh_world.y - mesh_camera.y, mesh_world.z }, ctx.cam_forward);
+            if (oi->ObjClass() != OBJCLASS_EFFECT && oi->ObjClass() != OBJCLASS_HELPER)
+                blended.obj_id = obj_id;
             Renderer->SubmitHelperMesh(blended);
         }
         else if (oi->ObjClass() == OBJCLASS_HELPER || gold_flare || combat_flash_base || mpappear_start || shadowfist || warriorborn || teleportation || speed_base || camera_particle_base || ((immortalmight_base || fmastery_base || camera_particle_base) && (authored_blend==16u || authored_blend==80u)))
@@ -3773,13 +3775,14 @@ void TMapRenderer::RenderFrame()
 
     if (review_inside_world_) review_inside_world_();
     Renderer->EndTilePass();
-    // The id target is drawn: copy the ids around the map pane's pick point
-    // back (retail picked while T3DScene::DrawScene drew, 0x00412db0).
+    mark_phase(timings.end_tile_pass_ms);
+    Renderer->RunLightingPass();
+    // Blended meshes contribute visible IDs after lighting, without
+    // changing the deferred material buffers or the scene's depth.
+    Renderer->RenderMeshPicking();
     s.notePickTable();
     if (s.pickX >= 0 && s.pickY >= 0)
         Renderer->RequestIdProbe(s.pickX, s.pickY, s.drawListVersion);
-    mark_phase(timings.end_tile_pass_ms);
-    Renderer->RunLightingPass();
     mark_phase(timings.lighting_pass_ms);
     finish_timings();
 

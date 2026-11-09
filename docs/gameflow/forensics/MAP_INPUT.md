@@ -358,6 +358,14 @@ What the port had before this work (2026-10-07):
 
 The port's design and state: §7.
 
+Windows picking (2026-11-09): the D3D11 mesh shader preserves the
+instance ID in both projection paths. Blended map meshes also submit their
+geometry and texture to an ID-only pass after lighting. That pass tests
+scene depth and rejects transparent texels, without writing scene depth,
+albedo, normals, or lighting. It draws back to front so nearer blended
+meshes replace farther IDs. Effects and helper objects retain zero IDs;
+probes are requested only after the picking pass has finished.
+
 ### 7.1 Verified (2026-10-08, headless, input simulator)
 
 - **The pick decodes each probe with its own draw list.** A content

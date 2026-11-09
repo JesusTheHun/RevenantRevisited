@@ -519,6 +519,7 @@ enum class EHelperMeshShade : uint8_t { Material = 0, Texture = 1, TextureLit = 
 
 struct SHelperMeshSubmit
 {
+    uint32_t obj_id = 0; // Map picking; zero leaves effects and helpers unpickable.
     MeshHandle mesh = 0;
     TTextureHandle texture_override = kInvalidTexture;
     float      uv_offset[2] = {0.0f, 0.0f}; // per-owner atlas/scroll, shared geometry stays immutable
@@ -644,6 +645,7 @@ public:
     void SubmitOverlay(const SOverlaySubmit& t);
     void SubmitMesh(const SMeshSubmit& m);
     void SubmitHelperMesh(const SHelperMeshSubmit& m);
+    void RenderMeshPicking();
     // Exact Goldp default animator: retail draws alpha coins before its base
     // additive flare. Normal helper queue and shader modes are unchanged.
     void SubmitGoldFlareAfterFx(const SHelperMeshSubmit& m);
@@ -1420,6 +1422,7 @@ private:
     std::vector<SHelperMeshSubmit> gold_flare_after_fx_queue;
     std::vector<SOverlaySubmit> overlay_queue;
     std::vector<SMeshSubmit> mesh_queue;
+    std::vector<SMeshSubmit> mesh_pick_queue;
     SRendererTilePassStats current_tile_pass_stats = {};
     SRendererTilePassStats last_tile_pass_stats = {};
 
@@ -1427,6 +1430,8 @@ private:
     sg_shader   mesh_shader      = {};
     sg_pipeline mesh_pipeline    = {};
     sg_pipeline mesh_source_cull_pipeline = {};
+    sg_pipeline mesh_pick_pipeline = {};
+    sg_pipeline mesh_pick_source_cull_pipeline = {};
     sg_pipeline mesh_source_alpha_pipeline = {};
     // Translucent meshes, in the transparent-world pass: a depth-only pass
     // per surface, then its lit colour where that left the nearest depth.
@@ -1627,7 +1632,7 @@ private:
     // Mesh pipeline lifecycle + per-frame drain.
     void InitMeshPipeline();
     void ShutdownMeshPipeline();
-    void DrainMeshQueue();
+    void DrainMeshQueue(bool picking_only = false);
     // Next buffer of the instance-row stream ring (one upload per buffer per frame).
     sg_buffer NextMeshInstanceBuffer();
     // The mesh vertex shader's uniform block (vp / camz / camw), 12 floats.

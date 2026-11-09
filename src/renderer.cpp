@@ -27,6 +27,7 @@
 // *************************************************************************
 
 #include "renderer.h"
+#include "meshpickpipeline.h"
 #include "retailmeshlighting.h"
 #include "fxsubmissionorder.h"
 
@@ -2133,6 +2134,13 @@ void TRenderer::InitMeshPipeline()
     pip.label = "renderer.mesh.source-positive-cull";
     mesh_source_cull_pipeline = sg_make_pipeline(&pip);
 
+    ConfigureMeshPickPipeline(pip);
+    pip.label = "renderer.mesh.pick-source-cull";
+    mesh_pick_source_cull_pipeline = sg_make_pipeline(&pip);
+    pip.cull_mode = SG_CULLMODE_NONE;
+    pip.label = "renderer.mesh.pick";
+    mesh_pick_pipeline = sg_make_pipeline(&pip);
+
     // Translucent meshes draw into helper_pass (lit_target + scene depth).
     // Step 1 leaves each surface's nearest depth; colour writes are off.
     sg_shader_desc dsh = {};
@@ -2370,6 +2378,8 @@ void TRenderer::ShutdownMeshPipeline()
     if (mesh_depth_pipeline.id) { sg_destroy_pipeline(mesh_depth_pipeline); mesh_depth_pipeline = {}; }
     if (mesh_depth_shader.id)   { sg_destroy_shader(mesh_depth_shader);     mesh_depth_shader   = {}; }
     if (mesh_pipeline.id)    { sg_destroy_pipeline(mesh_pipeline);  mesh_pipeline    = {}; }
+    if (mesh_pick_pipeline.id) { sg_destroy_pipeline(mesh_pick_pipeline); mesh_pick_pipeline = {}; }
+    if (mesh_pick_source_cull_pipeline.id) { sg_destroy_pipeline(mesh_pick_source_cull_pipeline); mesh_pick_source_cull_pipeline = {}; }
     if (mesh_source_cull_pipeline.id) { sg_destroy_pipeline(mesh_source_cull_pipeline); mesh_source_cull_pipeline = {}; }
     if (mesh_source_alpha_pipeline.id) { sg_destroy_pipeline(mesh_source_alpha_pipeline); mesh_source_alpha_pipeline = {}; }
     if (mesh_shader.id)      { sg_destroy_shader(mesh_shader);      mesh_shader      = {}; }
@@ -2981,6 +2991,8 @@ void TRenderer::SubmitMesh(const SMeshSubmit& m)
         mesh_queue.push_back(m);
         return;
     }
+    if (m.obj_id != 0 && !m.additive)
+        mesh_pick_queue.push_back(m);
     // Translucent: lit in the transparent-world pass, after the G-buffer
     // scene, so whatever is behind it is already lit.
     STransparentWorldSubmit sub = {};
@@ -3008,6 +3020,18 @@ void TRenderer::SubmitHelperMesh(const SHelperMeshSubmit& m)
     sub.sort_depth = m.sort_depth;
     sub.helper = m;
     transparent_world_queue.push_back(sub);
+    if (m.obj_id != 0)
+    {
+        SMeshSubmit pick = {};
+        pick.mesh = m.mesh;
+        pick.texture_override = m.texture_override;
+        std::memcpy(pick.uv_offset, m.uv_offset, sizeof(pick.uv_offset));
+        std::memcpy(pick.world, m.world, sizeof(pick.world));
+        pick.obj_id = m.obj_id;
+        pick.sort_depth = m.sort_depth;
+        pick.retail_positive_face_cull = m.retail_positive_face_cull;
+        mesh_pick_queue.push_back(pick);
+    }
 }
 
 void TRenderer::SubmitGoldFlareAfterFx(const SHelperMeshSubmit& m)
@@ -3024,17 +3048,22 @@ void TRenderer::SubmitRetailSourceAlphaAfterFx(const SHelperMeshSubmit& m)
     gold_flare_after_fx_queue.push_back(m);
 }
 
-void TRenderer::DrainMeshQueue()
+void TRenderer::DrainMeshQueue(bool picking_only)
 {
-    if (mesh_queue.empty() || !mesh_pipeline.id) return;
+    auto& submissions = picking_only ? mesh_pick_queue : mesh_queue;
+    const sg_pipeline pipeline = picking_only ? mesh_pick_pipeline : mesh_pipeline;
+    const sg_pipeline source_cull = picking_only ? mesh_pick_source_cull_pipeline : mesh_source_cull_pipeline;
+    if (submissions.empty() || !pipeline.id) return;
 
     // Cap to what the instance buffer can hold.
-    if (int32_t(mesh_queue.size()) > kMaxMeshInstances)
-        mesh_queue.resize(kMaxMeshInstances);
+    if (int32_t(submissions.size()) > kMaxMeshInstances)
+        submissions.resize(kMaxMeshInstances);
 
-    // Keep geometry/texture/cull-compatible instances contiguous.
-    std::sort(mesh_queue.begin(), mesh_queue.end(),
-              [](const SMeshSubmit& a, const SMeshSubmit& b) {
+    // Picking is back to front, so the nearest blended surface wins.
+    // Ordinary opaque draws group compatible instances to reduce draw calls.
+    std::sort(submissions.begin(), submissions.end(),
+              [picking_only](const SMeshSubmit& a, const SMeshSubmit& b) {
+                  if (picking_only && a.sort_depth != b.sort_depth) return a.sort_depth > b.sort_depth;
                   if (a.mesh != b.mesh) return a.mesh < b.mesh;
                   if (a.texture_override != b.texture_override) return a.texture_override < b.texture_override;
                   return a.retail_positive_face_cull < b.retail_positive_face_cull;
@@ -3043,10 +3072,10 @@ void TRenderer::DrainMeshQueue()
     // Pack instance rows (kMeshInstanceFloats each). Capacity is retained by
     // the renderer; the draw loop must not allocate just because the
     // animated/visible mesh count changes within the usual range.
-    mesh_instance_scratch.resize(mesh_queue.size() * kMeshInstanceFloats);
-    for (size_t i = 0; i < mesh_queue.size(); ++i)
+    mesh_instance_scratch.resize(submissions.size() * kMeshInstanceFloats);
+    for (size_t i = 0; i < submissions.size(); ++i)
     {
-        const auto& m = mesh_queue[i];
+        const auto& m = submissions[i];
         const int mode = RetailMeshLightingMode(m.retail_lighting, retail_mesh_rgb_enabled);
         PackMeshInstanceRow(m, &mesh_instance_scratch[i * kMeshInstanceFloats],
                             light.mode == 0 ? float(mode) : 0.0f);
@@ -3066,29 +3095,42 @@ void TRenderer::DrainMeshQueue()
 
     // Emit one instanced draw per compatible mesh/texture/cull run.
     size_t i = 0;
-    while (i < mesh_queue.size()) {
+    while (i < submissions.size()) {
         size_t j = i + 1;
-        while (j < mesh_queue.size() && mesh_queue[j].mesh == mesh_queue[i].mesh &&
-               mesh_queue[j].texture_override == mesh_queue[i].texture_override &&
-               mesh_queue[j].retail_positive_face_cull == mesh_queue[i].retail_positive_face_cull) ++j;
-        if (mesh_queue[i].retail_positive_face_cull && !mesh_source_cull_pipeline.id)
+        while (j < submissions.size() && submissions[j].mesh == submissions[i].mesh &&
+               submissions[j].texture_override == submissions[i].texture_override &&
+               submissions[j].retail_positive_face_cull == submissions[i].retail_positive_face_cull) ++j;
+        if (submissions[i].retail_positive_face_cull && !source_cull.id)
         { i = j; continue; } // Fail closed rather than silently disabling requested culling.
-        sg_apply_pipeline(mesh_queue[i].retail_positive_face_cull ? mesh_source_cull_pipeline : mesh_pipeline);
+        sg_apply_pipeline(submissions[i].retail_positive_face_cull ? source_cull : pipeline);
         sg_apply_uniforms(SG_SHADERSTAGE_VS, 0, &u_range);
 
-        const SMeshEntry& me = meshes[mesh_queue[i].mesh - 1];
+        const SMeshEntry& me = meshes[submissions[i].mesh - 1];
         sg_bindings bind = {};
         bind.vertex_buffers[0]        = me.vbuf;
         bind.vertex_buffers[1]        = instance_vb;
         bind.vertex_buffer_offsets[1] = int(i) * kMeshInstanceFloats * int(sizeof(float));
         bind.index_buffer             = me.ibuf;
-        bind.fs_images[0]             = TextureImage(mesh_queue[i].texture_override != kInvalidTexture
-                                                     ? mesh_queue[i].texture_override : me.albedo);
+        bind.fs_images[0]             = TextureImage(submissions[i].texture_override != kInvalidTexture
+                                                     ? submissions[i].texture_override : me.albedo);
         sg_apply_bindings(&bind);
         sg_draw(0, me.num_indices, int(j - i));
 
         i = j;
     }
+}
+
+void TRenderer::RenderMeshPicking()
+{
+    if (mesh_pick_queue.empty()) return;
+    sg_pass_action action = {};
+    for (int i = 0; i < 4; ++i) action.colors[i].action = SG_ACTION_LOAD;
+    action.depth.action = SG_ACTION_LOAD;
+    action.stencil.action = SG_ACTION_DONTCARE;
+    sg_begin_pass(default_pass, &action);
+    DrainMeshQueue(true);
+    sg_end_pass();
+    mesh_pick_queue.clear();
 }
 
 sg_buffer TRenderer::NextMeshInstanceBuffer()
@@ -4075,6 +4117,7 @@ void TRenderer::BeginTilePass(float r, float g, float b, float a)
     current_tile_pass_stats = {};
     tile_queue.clear();
     transparent_world_queue.clear();
+    mesh_pick_queue.clear();
     gold_flare_after_fx_queue.clear();
     overlay_queue.clear();
     sg_pass_action pa = {};
