@@ -1721,6 +1721,7 @@ void TRenderer::Shutdown()
     }
     texture_assets.clear();
     texture_by_key.clear();
+    bitmap_texture_cache.clear();
     white_texture = kInvalidTexture;
 
     if (default_pass.id) { sg_destroy_pass(default_pass); default_pass = {}; }
@@ -4872,6 +4873,24 @@ void TRenderer::CompositeSwapchainTinted(TTextureHandle texture,
 // * and docs/FRAME_PIPELINE.md.                                            *
 // *************************************************************************
 
+void TRenderer::ReleaseBitmapTextures(PTBitmap bitmap)
+{
+    for (auto it = bitmap_texture_cache.begin(); it != bitmap_texture_cache.end();)
+    {
+        if (it->second.source != bitmap)
+        {
+            ++it;
+            continue;
+        }
+        const TTextureHandle texture = it->second.texture;
+        const auto asset = texture_by_key.find(it->first);
+        if (asset != texture_by_key.end() && asset->second == texture)
+            texture_by_key.erase(asset);
+        DestroyDynamicTexture(texture);
+        it = bitmap_texture_cache.erase(it);
+    }
+}
+
 TTextureHandle TRenderer::BitmapAsTexture(PTBitmap bm, EBitmapDecode decode)
 {
     if (!bm || bm->width <= 0 || bm->height <= 0)
@@ -4882,7 +4901,7 @@ TTextureHandle TRenderer::BitmapAsTexture(PTBitmap bm, EBitmapDecode decode)
     // portrait with and without its own key).
     const uint64_t key = UIBitmapAtlasKey(bm, decode);
     if (auto it = bitmap_texture_cache.find(key); it != bitmap_texture_cache.end())
-        return it->second;
+        return it->second.texture;
 
     const int32_t w = bm->width;
     const int32_t h = bm->height;
@@ -4892,7 +4911,7 @@ TTextureHandle TRenderer::BitmapAsTexture(PTBitmap bm, EBitmapDecode decode)
     {
         log_warn("[renderer] DrawBitmap: DecodeBitmapToRGBA failed for bitmap %p (%dx%d, flags=0x%x)",
                  (void*)bm, w, h, bm->flags);
-        bitmap_texture_cache[key] = kInvalidTexture;
+        bitmap_texture_cache[key] = {bm, kInvalidTexture};
         return kInvalidTexture;
     }
 
@@ -4901,7 +4920,7 @@ TTextureHandle TRenderer::BitmapAsTexture(PTBitmap bm, EBitmapDecode decode)
         ERendererTextureFormat::RGBA8,
         uint64_t(rgba.size()),
         ERendererTextureFilter::Nearest);
-    bitmap_texture_cache[key] = tex;
+    bitmap_texture_cache[key] = {bm, tex};
     return tex;
 }
 

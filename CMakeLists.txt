@@ -433,6 +433,16 @@ add_executable(test_shadowplan
   src/shadow/shadowplan.cpp)
 target_link_libraries(test_shadowplan PRIVATE GTest::gtest_main)
 
+# Bitmap-cache lifetime across DEF screen transitions, without retail data.
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/bitmap_lifetime_fixture.cpp
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/bitmap_lifetime_fixture.py
+          --output ${CMAKE_CURRENT_BINARY_DIR}/bitmap_lifetime_fixture.cpp
+  DEPENDS tools/bitmap_lifetime_fixture.py tools/test_bitmap_lifetime.cpp
+          src/bitmapatlas.cpp src/bitmapdecode.h src/renderer.cpp src/renderer.h src/defpane.cpp
+  VERBATIM)
+add_executable(test_bitmap_lifetime ${CMAKE_CURRENT_BINARY_DIR}/bitmap_lifetime_fixture.cpp)
+target_link_libraries(test_bitmap_lifetime PRIVATE GTest::gtest_main)
+
 # Sound file decoding and lengths (audio_backend's decoders; no playback
 # device). miniz reads the shipped voices when REVENANT_DATA_PATH is set.
 add_executable(test_audio_decode
@@ -527,6 +537,7 @@ endforeach()
 # <executable>.<Suite>.<Case>.
 foreach(test IN ITEMS
     test_audio_decode
+    test_bitmap_lifetime
     test_classiclighting
     test_defio
     test_defwidget

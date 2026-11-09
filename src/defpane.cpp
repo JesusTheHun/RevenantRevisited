@@ -1025,7 +1025,17 @@ void TDefPane::ReleaseAssets()
     delete surface;
     surface = nullptr;
     for (auto& kv : archives)
-        if (kv.second) free(kv.second);     // TMulti is a malloc'd resource blob
+    {
+        if (!kv.second)
+            continue;
+        // These UI DAT archives own the bitmaps borrowed by the renderer.
+        // Heap addresses can be reused by the next screen, so evict their
+        // fallback textures before releasing the source resource blob.
+        if (Renderer)
+            for (int32_t i = 0; i < kv.second->numoffsets; ++i)
+                Renderer->ReleaseBitmapTextures(kv.second->Bitmap(i));
+        free(kv.second);     // TMulti is a malloc'd resource blob
+    }
     archives.clear();
     bitmapDats.clear();
     widgets.clear();

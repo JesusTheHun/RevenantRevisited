@@ -688,6 +688,10 @@ public:
                                         ERendererTextureFilter filter = ERendererTextureFilter::Linear,
                                         bool repeat = false);
     const SRendererTextureInfo* TextureInfo(TTextureHandle handle) const;
+    // Bitmap owners call before releasing or reusing their source storage.
+    // Drops all fallback decode variants; shared HUD atlas pages are separate.
+    void ReleaseBitmapTextures(PTBitmap bitmap);
+
     void AddTextureAssetRef(TTextureHandle handle, uint32_t count = 1);
     void ReleaseTextureAssetRef(TTextureHandle handle, uint32_t count = 1);
     void ResetAssetRefCounts();
@@ -1281,7 +1285,8 @@ private:
     // ---- HUD state (DrawBitmap/DrawSurface/AddHud/DrawHud) --------------
     // Fallback PTBitmap -> one-off GPU texture. Atlased bitmap draws are owned
     // by bitmapatlas.cpp; this cache is used only for late/missed bitmaps.
-    std::unordered_map<uint64_t, TTextureHandle> bitmap_texture_cache;
+    struct SBitmapTexture { PTBitmap source; TTextureHandle texture; };
+    std::unordered_map<uint64_t, SBitmapTexture> bitmap_texture_cache;
     TTextureHandle BitmapAsTexture(PTBitmap bm, EBitmapDecode decode = EBitmapDecode::Pixels);
 
     // Registered HUD drawables + their z-order. Renderer owns this
