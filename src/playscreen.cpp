@@ -711,6 +711,7 @@ void TPlayScreen::Close()
 {
     ingamemenu->Close();
     menuPending = false;
+    nextpane = nullptr;
     ThawFrame();
     if (drawer == EDrawer::BuySell)
         CloseBuySellDrawer();
@@ -819,6 +820,27 @@ static void PulseSaveCycleTest()
     }
 }
 
+// Readers request their modal from Use(), while inventory input is still
+// dispatching. Initialize and register it at the next tick instead.
+void TPlayScreen::OpenNextPane()
+{
+    PTPane pane = nextpane;
+    nextpane = nullptr;
+    if (!pane || pane->IsOpen())
+        return;
+    if (!pane->Initialize())
+    {
+        pane->Close();
+        log_error("[playscreen] can't initialize the requested pane");
+        return;
+    }
+    if (!PushModal(pane, MODAL_GAME | MODAL_ANIMATE, [this, pane](int32_t) {
+            pane->Close();
+            Redraw();
+        }))
+        pane->Close();
+}
+
 void TPlayScreen::Update()
 {
     // Shadow Smoke (--shadow): its audit of the last tick and its next step,
@@ -826,12 +848,7 @@ void TPlayScreen::Update()
     // it waits out or skips as a player would.
     Shadow.Pulse();
 
-    // Apply any deferred pane add scheduled by SetNextPane().
-    if (nextpane)
-    {
-        AddPane(nextpane);
-        nextpane = nullptr;
-    }
+    OpenNextPane();
 
     // Retail's movie player blocked the game: nothing ticks while one plays.
     if (movieplaying)

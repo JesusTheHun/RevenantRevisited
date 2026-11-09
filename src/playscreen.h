@@ -207,7 +207,7 @@ class TPlayScreen : public TScreen
       // refreshes it.
 
     void SetNextPane(PTPane pane) { nextpane = pane; }
-      // Defers a pane-add to the start of the next Update().
+      // Initializes and opens a modal pane at the start of the next Update().
 
     void HideLowerPanes();
     void ShowLowerPanes();
@@ -360,6 +360,7 @@ class TPlayScreen : public TScreen
 
     // Pane plumbing
     PTPane nextpane = nullptr;
+    void OpenNextPane();
 
     // The play screen's fader (retail +0x5bc), set up in Initialize.
     TScreenFade screenfade;

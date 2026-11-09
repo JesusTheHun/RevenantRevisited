@@ -433,6 +433,16 @@ add_executable(test_shadowplan
   src/shadow/shadowplan.cpp)
 target_link_libraries(test_shadowplan PRIVATE GTest::gtest_main)
 
+# Production scroll/book reader with asset-free UI and renderer doubles.
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/scroll_reader_fixture.cpp
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/scroll_reader_fixture.py
+          --output ${CMAKE_CURRENT_BINARY_DIR}/scroll_reader_fixture.cpp
+  DEPENDS tools/scroll_reader_fixture.py tools/scroll_reader_doubles.h tools/test_scroll_reader.cpp
+          src/scroll.cpp src/scroll.h src/playscreen.cpp src/font.cpp
+  VERBATIM)
+add_executable(test_scroll_reader ${CMAKE_CURRENT_BINARY_DIR}/scroll_reader_fixture.cpp)
+target_link_libraries(test_scroll_reader PRIVATE GTest::gtest_main)
+
 # Sound file decoding and lengths (audio_backend's decoders; no playback
 # device). miniz reads the shipped voices when REVENANT_DATA_PATH is set.
 add_executable(test_audio_decode
@@ -536,7 +546,8 @@ foreach(test IN ITEMS
     test_props
     test_savefile
     test_sectorstore
-    test_shadowplan)
+    test_shadowplan
+    test_scroll_reader)
   gtest_discover_tests(${test} TEST_PREFIX "${test}." DISCOVERY_MODE PRE_TEST)
 endforeach()
 

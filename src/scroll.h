@@ -12,6 +12,10 @@
 #include "button.h"
 #include "font.h"
 
+#include <memory>
+#include <string>
+#include <vector>
+
 _CLASSDEF(TScroll)
 class TScroll final : public TObjectInstance
 {
@@ -49,39 +53,42 @@ _CLASSDEF(TScrollPane)
 class TScrollPane : public TButtonPane
 {
   public:
-    TScrollPane() : TButtonPane(0, 0, WIDTH, HEIGHT) { scroll = nullptr; }
+    TScrollPane() : TScrollPane(false) { }
 
-    virtual bool Initialize();
-    virtual void Close();
-    virtual void DrawBackground();
-    virtual void KeyPress(int32_t key, bool down);
+    bool Initialize() override;
+    void Close() override;
+    void KeyPress(int32_t key, bool down) override;
+    void OnCanvasResize(int32_t width, int32_t height) override;
+    void OnScreenEvent(int32_t code, void* param) override;
+    void OnControl(TButton* button, int32_t message) override;
 
-    void SetScroll(PTScroll s);
-        // Set the pane to read from the scroll object given
-
-    void Scroll(int32_t numscrolllines);
-        // Can be negative or positive to scroll up or down
+    void SetScroll(PTScroll scroll);
+    void Scroll(int32_t delta);
 
   protected:
-    PTScroll scroll;                // Pointer to the scroll being read
+    explicit TScrollPane(bool isbook) : TButtonPane(0, 0, WIDTH, HEIGHT), book(isbook) { }
+    void ComposeBackground(int32_t target_w, int32_t target_h) override;
 
-    TMulti* scrolldata;             // Bitmap of scroll and buttons
-    TFont* scrollfont;              // Text font
+  private:
+    void LayoutText();
+    void UpdateButtons();
+    int32_t VisibleLines() const { return linesperpage * (book ? 2 : 1); }
 
-    int32_t line;                       // For scrolling through the text
-    int32_t numlines;                   // Number of total lines in the text
+    const bool book;
+    std::unique_ptr<TMulti> scrolldata;
+    PTBitmap paper = nullptr;
+    const SFontAtlas* scrollfont = nullptr;
+    SColor textcolor{255, 255, 255};
+    std::string text;
+    std::vector<std::string> lines;
+    int32_t line = 0;
+    int32_t lineheight = 1;
+    int32_t linesperpage = 1;
 };
-
-// *************
-// * TBookPane *
-// *************
 
 _CLASSDEF(TBookPane)
 class TBookPane final : public TScrollPane
 {
   public:
-    TBookPane() : TScrollPane() { }
-
-    virtual bool Initialize();
-    virtual void DrawBackground();
+    TBookPane() : TScrollPane(true) { }
 };

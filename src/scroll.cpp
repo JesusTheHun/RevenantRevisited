@@ -7,10 +7,13 @@
 #include "revenant.h"
 #include "scroll.h"
 #include "display.h"
+#include "renderer.h"
 #include "bitmap.h"
 #include "font.h"
 #include "fonttable.h"
 #include "playscreen.h"
+
+#include <algorithm>
 
 REGISTER_BUILDER(TScroll)
 TObjectClass ScrollClass("SCROLL", OBJCLASS_SCROLL, 0);
@@ -76,10 +79,13 @@ bool TScroll::Use(TObjectInstance* user, int32_t with)
         PTScrollPane pane = &ScrollPane;
 
         if (!stricmp(GetTypeName(), "Book"))
-            pane = (PTScrollPane)&BookPane;
+            pane = &BookPane;
 
-        PlayScreen.SetNextPane(pane);
+        if (pane->IsOpen())
+            return false;
         pane->SetScroll(this);
+        PlayScreen.SetNextPane(pane);
+        return true;
     }
 
     return false;
@@ -89,243 +95,167 @@ bool TScroll::Use(TObjectInstance* user, int32_t with)
 // * TScrollPane *
 // ***************
 
-#define NUMLINES        11      // depends on font and scroll height
-#define SCROLLWIDTH     430     // depends on font and scroll width
-
-void ScrollBtnScrollUp()
-{
-    ScrollPane.Scroll(-NUMLINES);
-}
-
-void ScrollBtnScrollDown()
-{
-    ScrollPane.Scroll(NUMLINES);
-}
-
-void ScrollBtnExit()
-{
-    ScrollPane.Close();
-}
-
 bool TScrollPane::Initialize()
 {
-    TButtonPane::Initialize();
-
-    line = 0;
-    numlines = 0;
-
-    scrolldata = TMulti::LoadMulti("scroll.dat");
-    scrollfont = FontTable->Bitmap("Scroll");
-
-    SetScroll(scroll);      // recompute number of lines now that font is loaded up
-
-    if (scrolldata)
-    {
-        PTBitmap bitmap = scrolldata->Bitmap("scroll");
-        int32_t x = (WIDTH - bitmap->width) / 2;
-        int32_t y = (HEIGHT - bitmap->height) / 4;
-
-        NewButton("down", x+452, y+330, 28, 31, VK_NEXT, ScrollBtnScrollDown, scrolldata->Bitmap("downdown"), scrolldata->Bitmap("downup"));
-        NewButton("up", x+484, y+323, 28, 31, VK_PRIOR, ScrollBtnScrollUp, scrolldata->Bitmap("updown"), scrolldata->Bitmap("upup"));
-        NewButton("exit", x+518, y+321, 28, 31, VK_ESCAPE, ScrollBtnExit, scrolldata->Bitmap("exitdown"), scrolldata->Bitmap("exitup"));
-
-        PlayScreen.AddPane(this);
-        PlayScreen.SetExclusivePane(this, true);
+    if (IsOpen())
         return true;
+
+    OnCanvasResize(Display.Width(), Display.Height());
+    TButtonPane::Initialize();
+    scrolldata.reset(TMulti::LoadMulti(book ? "book.dat" : "scroll.dat"));
+    const char* fontname = book ? "Book" : "Scroll";
+    scrollfont = FontTable ? FontTable->Atlas(fontname) : nullptr;
+    const TGenericFont* font = FontTable ? FontTable->FindFont(fontname) : nullptr;
+    if (!scrolldata || !scrollfont || !font)
+    {
+        Close();
+        return false;
     }
 
-    return false;
+    paper = scrolldata->FindBitmap(book ? "book" : "scroll");
+    if (!paper)
+    {
+        Close();
+        return false;
+    }
+    textcolor = font->color;
+    lineheight = std::max(1, static_cast<int32_t>(TextLineHeight(scrollfont)) + font->lextra);
+    linesperpage = book ? 16 : std::max(1, 230 / lineheight);
+    const int32_t x = (WIDTH - paper->width) / 2;
+    const int32_t y = (HEIGHT - paper->height) / (book ? 3 : 4);
+    NewButton("down", x + (book ? 440 : 452), y + (book ? 386 : 330), 28, book ? 22 : 31,
+              VK_NEXT, nullptr, scrolldata->Bitmap("downdown"), scrolldata->Bitmap("downup"));
+    NewButton("up", x + (book ? 472 : 484), y + (book ? 379 : 323), 28, book ? 23 : 31,
+              VK_PRIOR, nullptr, scrolldata->Bitmap("updown"), scrolldata->Bitmap("upup"));
+    NewButton("exit", x + (book ? 505 : 518), y + (book ? 377 : 321), 28, book ? 30 : 31,
+              VK_ESCAPE, nullptr, scrolldata->Bitmap("exitdown"), scrolldata->Bitmap("exitup"));
+    LayoutText();
+    return true;
 }
 
 void TScrollPane::Close()
 {
+    // Buttons borrow archive bitmaps; release them before their archive.
     TButtonPane::Close();
-
-    if (scrolldata)
-        delete scrolldata;
-
-    PlayScreen.ReleaseExclusivePane(this);
-    PlayScreen.RemovePane(this);
-    PlayScreen.Redraw();
-
-    scroll = nullptr;
+    scrolldata.reset();
+    paper = nullptr;
+    scrollfont = nullptr;
+    text.clear();
+    lines.clear();
+    line = 0;
 }
 
-void TScrollPane::DrawBackground()
+void TScrollPane::OnCanvasResize(int32_t width, int32_t height)
 {
-    if (IsDirty())
+    // Keep the retail layout centered, including its input hit rectangles.
+    Resize(std::max(0, (width - WIDTH) / 2), std::max(0, (height - HEIGHT) / 2), WIDTH, HEIGHT);
+    PaneResized();
+}
+
+void TScrollPane::OnScreenEvent(int32_t code, void* param)
+{
+    if (code == TScreen::SCREENEVENT_CLOSING)
+        Close();
+}
+
+void TScrollPane::ComposeBackground(int32_t target_w, int32_t target_h)
+{
+    if (!paper || !scrollfont || !Renderer)
+        return;
+    const int32_t x = (WIDTH - paper->width) / 2;
+    const int32_t y = (HEIGHT - paper->height) / (book ? 3 : 4);
+    Renderer->DrawBitmapToTarget(paper, x, y, target_w, target_h);
+
+    for (int32_t side = 0; side < (book ? 2 : 1); ++side)
     {
-        PTBitmap bitmap = scrolldata->Bitmap("scroll");
-
-        int32_t x = (WIDTH - bitmap->width) / 2;
-        int32_t y = (HEIGHT - bitmap->height) / 4;
-        Display.Put(x, y, bitmap, DM_TRANSPARENT | DM_BACKGROUND);
-
-        if (scroll && scroll->GetText())
-            Display.WriteText(scroll->GetText(), x+65, y+68, NUMLINES, scrollfont, nullptr, DM_USEDEFAULT, SCROLLWIDTH, line);
-
-        // decide which buttons should be visisble
-        if (line < 1)
-            Button(1)->Hide();
-        else
-            Button(1)->Show();
-
-        if ((line + NUMLINES - 1) >= numlines)
-            Button(0)->Hide();
-        else
-            Button(0)->Show();
-
-        Button(2)->Show();
-
-        RedrawButtons();
-        SetDirty(false);
+        if (book)
+        {
+            const std::string number = std::to_string(line / linesperpage + side + 1);
+            DrawTextToTarget(scrollfont, number.c_str(), x + 180 + side * 232, y + 21 + side * 2,
+                             0, lineheight, ETextAlign::Center, textcolor.red / 255.0f,
+                             textcolor.green / 255.0f, textcolor.blue / 255.0f, target_w, target_h);
+        }
+        for (int32_t row = 0; row < linesperpage; ++row)
+        {
+            const int32_t index = line + side * linesperpage + row;
+            if (index >= static_cast<int32_t>(lines.size()))
+                break;
+            DrawTextToTarget(scrollfont, lines[index].c_str(), x + (book ? 82 + side * 232 : 65),
+                             y + (book ? 40 + side * 2 : 68) + row * lineheight,
+                             book ? 216 : 430, lineheight, ETextAlign::Left,
+                             textcolor.red / 255.0f, textcolor.green / 255.0f, textcolor.blue / 255.0f,
+                             target_w, target_h);
+        }
     }
+}
 
-    // buttons shouldn't draw until after the rest is placed down
-    TButtonPane::DrawBackground();
+void TScrollPane::OnControl(TButton* button, int32_t message)
+{
+    if (message != CONTROL_CLICKED)
+        return;
+    if (button == Button(0))
+        Scroll(VisibleLines());
+    else if (button == Button(1))
+        Scroll(-VisibleLines());
+    else if (button == Button(2))
+        EndModal(0); // The completion closes the pane after input dispatch.
 }
 
 void TScrollPane::KeyPress(int32_t key, bool down)
 {
     TButtonPane::KeyPress(key, down);
-
-    if (down)
+    if (!down)
+        return;
+    switch (key)
     {
-        switch (key)
-        {
-            case VK_UP:
-                Scroll(-1);
-                break;
-            case VK_DOWN:
-                Scroll(1);
-                break;
-            case VK_HOME:
-                Scroll(-100000);
-                break;
-            case VK_END:
-                Scroll(100000);
-                break;
-        }
+    case VK_UP:   Scroll(-1); break;
+    case VK_DOWN: Scroll(1); break;
+    case VK_HOME: Scroll(-static_cast<int32_t>(lines.size())); break;
+    case VK_END:  Scroll(static_cast<int32_t>(lines.size())); break;
     }
 }
 
-void TScrollPane::SetScroll(PTScroll s)
+void TScrollPane::SetScroll(PTScroll scroll)
 {
-    scroll = s;
-
-    if (scroll && scroll->GetText() && scrollfont)
-        numlines = scrollfont->FindNumLinesInText(scroll->GetText(), SCROLLWIDTH);
-    else
-        numlines = 0;
+    // The object may be deleted by a subsequent load; the reader owns its text.
+    text = scroll && scroll->GetText() ? scroll->GetText() : "";
+    LayoutText();
 }
 
-void TScrollPane::Scroll(int32_t numscrolllines)
+void TScrollPane::LayoutText()
 {
-    int32_t oldline = line;
-
-    line += numscrolllines;
-
-    if (line < 0)
-        line = 0;
-    else if (line > numlines)
-        line = numlines;
-
-    if (oldline != line)
-        SetDirty(true);
-}
-
-// *************
-// * TBookPane *
-// *************
-
-#define BOOKLINES       16      // depends on font and scroll height
-#define BOOKWIDTH       216     // depends on font and scroll width
-
-void BookBtnScrollUp()
-{
-    BookPane.Scroll(-(BOOKLINES * 2));
-}
-
-void BookBtnScrollDown()
-{
-    BookPane.Scroll(BOOKLINES * 2);
-}
-
-void BookBtnExit()
-{
-    BookPane.Close();
-}
-
-bool TBookPane::Initialize()
-{
-    TButtonPane::Initialize();
-
+    lines.clear();
     line = 0;
-    numlines = 0;
-
-    scrolldata = TMulti::LoadMulti("book.dat");
-    scrollfont = FontTable->Bitmap("Book");
-
-    SetScroll(scroll);          // recompute number of lines now that font is loaded up
-
-    if (scrolldata)
-    {
-        PTBitmap bitmap = scrolldata->Bitmap("book");
-        int32_t x = (WIDTH - bitmap->width) / 2;
-        int32_t y = (HEIGHT - bitmap->height) / 3;
-
-        NewButton("down", x+440, y+386, 28, 22, VK_NEXT, BookBtnScrollDown, scrolldata->Bitmap("downdown"), scrolldata->Bitmap("downup"));
-        NewButton("up", x+472, y+379, 28, 23, VK_PRIOR, BookBtnScrollUp, scrolldata->Bitmap("updown"), scrolldata->Bitmap("upup"));
-        NewButton("exit", x+505, y+377, 28, 30, VK_ESCAPE, BookBtnExit, scrolldata->Bitmap("exitdown"), scrolldata->Bitmap("exitup"));
-
-        PlayScreen.AddPane(this);
-        PlayScreen.SetExclusivePane(this, true);
-        return true;
-    }
-
-    return false;
+    if (scrollfont)
+        WrapTextLines(scrollfont, text.c_str(), book ? 216.0f : 430.0f, lines);
+    if (IsOpen() && paper)
+        UpdateButtons();
+    SetDirty(true);
 }
 
-void TBookPane::DrawBackground()
+void TScrollPane::UpdateButtons()
 {
-    if (IsDirty())
-    {
-        PTBitmap bitmap = scrolldata->Bitmap("book");
-
-        int32_t x = (WIDTH - bitmap->width) / 2;
-        int32_t y = (HEIGHT - bitmap->height) / 3;
-        Display.Put(x, y, bitmap, DM_TRANSPARENT | DM_BACKGROUND);
-
-        if (scroll && scroll->GetText())
-        {
-            char buf[80];
-            for (int32_t side = 0; side < 2; side++)
-            {
-                sprintf(buf, "%d", (line / BOOKLINES) + side + 1);
-                Display.WriteText(buf, x+180+(side*232), y+21+(side*2), 1, scrollfont, nullptr, DM_USEDEFAULT, -1, 0, JUSTIFY_CENTER);
-
-                Display.WriteText(scroll->GetText(), x+82+(side*232), y+40+(side*2), BOOKLINES, scrollfont, nullptr, DM_USEDEFAULT, BOOKWIDTH, line + (side*BOOKLINES));
-            }
-        }
-
-        // decide which buttons should be visisble
-        if (line < 1)
-            Button(1)->Hide();
-        else
-            Button(1)->Show();
-
-        if ((line + (BOOKLINES*2) - 1) >= numlines)
-            Button(0)->Hide();
-        else
-            Button(0)->Show();
-
-        Button(2)->Show();
-
-        RedrawButtons();
-        SetDirty(false);
-    }
-
-    // buttons shouldn't draw until after the rest is placed down
-    TButtonPane::DrawBackground();
+    if (line + VisibleLines() < static_cast<int32_t>(lines.size()))
+        Button(0)->Show();
+    else
+        Button(0)->Hide();
+    if (line > 0)
+        Button(1)->Show();
+    else
+        Button(1)->Hide();
 }
 
+void TScrollPane::Scroll(int32_t delta)
+{
+    const int32_t count = static_cast<int32_t>(lines.size());
+    // A book ends on its last spread; a scroll keeps its last page filled.
+    const int32_t last = book ? std::max(0, (count - 1) / VisibleLines()) * VisibleLines()
+                              : std::max(0, count - VisibleLines());
+    const int32_t next = static_cast<int32_t>(std::clamp<int64_t>(int64_t(line) + delta, 0, last));
+    if (next != line)
+    {
+        line = next;
+        UpdateButtons();
+        SetDirty(true);
+    }
+}
