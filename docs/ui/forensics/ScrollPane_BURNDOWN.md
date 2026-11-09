@@ -1,5 +1,22 @@
 # TScrollPane — Reconstruction Burndown
-Spec: ScrollPane_SPEC.md   Status: done (harness verified; production integration pending)
+Spec: ScrollPane_SPEC.md   Status: harness verified; production reader integrated
+
+## Production integration
+
+The in-game reader in [scroll.cpp](../../../src/scroll.cpp) composes actual
+object text through TButtonPane, FONT.DEF atlases, and the canonical word
+wrapper. Short known text tags resolve through the active language table.
+The deferred opening uses PushModal/EndModal, with owned artwork and text,
+cleanup after input dispatch, and a centered classic layout on resize.
+Scroll and book readers share this lifecycle and rendering implementation.
+
+Nine asset-free regression tests cover the production declarations and method
+bodies. The Level 1 magic scroll was checked in-game on Windows D3D11 for
+opening, localized instructions, closing, reopening, and shutdown while open.
+Book layout has fixture coverage; full retail visual parity remains unverified.
+
+The checklist below records the separate UIScrollPane harness, including its
+approximate font, shadow, and synthetic-content choices.
 
 ## Assets to load            (spec §2)
 - [x] scroll.dat:scroll   570×374 → parchment chrome               (§2)
