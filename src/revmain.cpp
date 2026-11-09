@@ -2665,12 +2665,15 @@ sapp_desc sokol_main(int argc, char* argv[])
     // the input-script's auto-exit fails or the engine deadlocks before
     // the script drains, the process eventually exits on its own.
     bool cli_headless = false;
+    bool cli_fullscreen = false;
     bool cli_lockstep = false;          // --control / --replay: the session is serviced from frames
     for (int i = 1; i < argc; ++i)
     {
         const char* a = argv[i];
         if (!a) continue;
         while (*a == '-' || *a == '/') ++a;
+        if (strcmp(a, "fullscreen") == 0) cli_fullscreen = true;
+        if (strcmp(a, "windowed") == 0) cli_fullscreen = false;
         if (std::strcmp(a, "headless") == 0) { cli_headless = true; }
         else if (std::strncmp(a, "control=", 8) == 0 || std::strncmp(a, "replay=", 7) == 0) { cli_lockstep = true; }
         else if (std::strncmp(a, "max-runtime=", 12) == 0)
@@ -2691,6 +2694,7 @@ sapp_desc sokol_main(int argc, char* argv[])
     desc.height = GameScreenHeight;
     desc.window_title = "Revenant";
     desc.high_dpi = false;
+    desc.fullscreen = cli_fullscreen;
     desc.sample_count = 1;
     // Enable OS clipboard. Required for the editor's Cut/Copy/Paste
     // commands -- sokol_imgui's clipboard handlers route through
@@ -2723,7 +2727,7 @@ sapp_desc sokol_main(int argc, char* argv[])
     // Windowed by default; Borderless/FullScreen come from INI/args and
     // take effect before the window opens only if set via argv. Anything
     // else stays at sokol defaults.
-    Windowed = true;
+    Windowed = !cli_fullscreen;
     return desc;
 }
 
@@ -3248,6 +3252,17 @@ static void AppEvent(const sapp_event* ev)
         if (down && ev->key_code == SAPP_KEYCODE_Q && (ev->modifiers & SAPP_MODIFIER_SUPER))
         {
             sapp_request_quit();
+            break;
+        }
+
+        if (down && !ev->key_repeat &&
+            (ev->key_code == SAPP_KEYCODE_F11 ||
+             (ev->key_code == SAPP_KEYCODE_ENTER && (ev->modifiers & SAPP_MODIFIER_ALT))))
+        {
+            sapp_toggle_fullscreen();
+            Windowed = !sapp_is_fullscreen();
+            FullScreen = !Windowed;
+            RefreshOSCursor();
             break;
         }
 

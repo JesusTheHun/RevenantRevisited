@@ -19,6 +19,12 @@ The current port already runs the game data, loads archived map sectors from the
 - Replace obsolete DirectX-era rendering/input assumptions with modern platform code
 - Expose internal systems through focused test modes so rendering and data-loading work can be verified quickly
 
+## Fullscreen
+
+Press F11 or Alt+Enter to switch between fullscreen and windowed mode.
+Start with `--fullscreen` to open fullscreen, or `--windowed` for a window.
+When both switches are supplied, the last one takes precedence.
+
 ## Current Highlights
 
 - Cross-platform CMake-based build
