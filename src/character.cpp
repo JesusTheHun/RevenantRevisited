@@ -4445,10 +4445,10 @@ int32_t ObjectsAhead(TCharacter* chr, int32_t ahead, int32_t reach, int32_t (&li
 // main player reads "Talk to <type>" (FULLTALKTO, else TALKTO) or "Use
 // <name>" (FULLUSE, else BASEUSE), or USENOTHING. A dead character does
 // nothing.
-bool TCharacter::TryUse()
+TObjectInstance* TCharacter::FindUseTarget(TObjectInstance* target)
 {
     if (Health() < 1)
-        return false;
+        return nullptr;
 
     int32_t list[10];
     const int32_t n = ObjectsAhead(this, 60, 60, list);
@@ -4457,7 +4457,7 @@ bool TCharacter::TryUse()
     for (int32_t i = 0; i < n; i++)
     {
         TObjectInstance* oi = MapPane.GetInstance(list[i]);
-        if (!oi || (oi->GetFlags() & OF_INVISIBLE))
+        if (!oi || (target && oi != target) || (oi->GetFlags() & OF_INVISIBLE))
             continue;
 
         const int32_t objclass = oi->ObjClass();
@@ -4474,6 +4474,14 @@ bool TCharacter::TryUse()
         }
     }
 
+    return best;
+}
+
+bool TCharacter::TryUse()
+{
+    if (Health() < 1)
+        return false;
+    TObjectInstance* best = FindUseTarget();
     if (!best)
     {
         if (this == Player)

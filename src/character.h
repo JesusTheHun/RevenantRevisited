@@ -277,6 +277,9 @@ class TCharacter : public TComplexObject
       // gold at its feet, the rest thrown out around it (DEATH_LOOT.md §2)
     bool Pull(TObjectInstance* inst);
       // Causes character to pull lever
+    TObjectInstance* FindUseTarget(TObjectInstance* target = nullptr);
+      // U's eligible target in its forward reach; an explicit target must
+      // meet the same checks. Shared with mouse activation of exits.
     bool TryUse();
       // Uses the nearest container, exit or friendly character in front of
       // the character (the Use control; retail 0x004d01e0)

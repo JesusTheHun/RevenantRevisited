@@ -433,6 +433,16 @@ add_executable(test_shadowplan
   src/shadow/shadowplan.cpp)
 target_link_libraries(test_shadowplan PRIVATE GTest::gtest_main)
 
+# The production keyboard and mouse paths share exit-use reach.
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/use_reach_fixture.cpp
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/use_reach_fixture.py
+          --output ${CMAKE_CURRENT_BINARY_DIR}/use_reach_fixture.cpp
+  DEPENDS tools/use_reach_fixture.py tools/test_use_reach.cpp
+          src/character.cpp src/character.h src/mappane.cpp
+  VERBATIM)
+add_executable(test_use_reach ${CMAKE_CURRENT_BINARY_DIR}/use_reach_fixture.cpp)
+target_link_libraries(test_use_reach PRIVATE GTest::gtest_main)
+
 # Sound file decoding and lengths (audio_backend's decoders; no playback
 # device). miniz reads the shipped voices when REVENANT_DATA_PATH is set.
 add_executable(test_audio_decode
@@ -543,7 +553,8 @@ foreach(test IN ITEMS
     test_props
     test_savefile
     test_sectorstore
-    test_shadowplan)
+    test_shadowplan
+    test_use_reach)
   gtest_discover_tests(${test} TEST_PREFIX "${test}." DISCOVERY_MODE PRE_TEST)
 endforeach()
 

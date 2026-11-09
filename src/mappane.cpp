@@ -1175,6 +1175,15 @@ void TMapPane::PlayMouseRelease(int32_t x, int32_t y, bool attackcursor)
 
     if (clicked)
     {
+        // Door clicks use U's forward reach, not the general pickup radius.
+        if (on && on->ObjClass() == OBJCLASS_EXIT && onobject == objindex)
+        {
+            if (Player->FindUseTarget(on) == on)
+                on->Use(Player, -1);
+            else
+                TextBar.Print("%s", DialogList.GetLine("USENOTHING"));
+            return;
+        }
         constexpr int32_t kReach = 96;      // retail: Distance < 0x61
         if (on && on->Distance(Player) > kReach && on->ObjClass() != OBJCLASS_CHARACTER)
         {
@@ -1203,6 +1212,12 @@ void TMapPane::PlayMouseRelease(int32_t x, int32_t y, bool attackcursor)
     // it, ...), else dropped at the pointer.
     if (!inst)
         return;
+    // A key or other carried item must not bypass that reach check.
+    if (on && on->ObjClass() == OBJCLASS_EXIT && Player->FindUseTarget(on) != on)
+    {
+        TextBar.Print("%s", DialogList.GetLine("USENOTHING"));
+        return;
+    }
     if (on && on->Use(Player, inst->GetMapIndex()))
         return;
     DropHeldItem(inst, x, y);
