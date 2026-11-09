@@ -3,11 +3,11 @@
 // *   renderer_readback_stub.cpp - no GPU readback on this platform       *
 // *************************************************************************
 //
-// Readback is Metal-only so far (platform/macosx/renderer_readback.mm).
+// Metal and D3D11 have native readback backends under platform/.
 // Elsewhere every read reports "not supported", as renderer_readback.h
 // lets it: editor picking and the headless snapshot paths then do nothing.
 
-#if !defined(__APPLE__)
+#if !defined(__APPLE__) && !defined(SOKOL_D3D11)
 
 #include "../renderer_readback.h"
 

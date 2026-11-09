@@ -231,9 +231,9 @@ the bucket or its domains, which is done in the Cloudflare dashboard.
 
 ## 10. Known gaps
 
-- GPU readback (`RendererReadback`) exists only for Metal. On Windows and
-  Linux the stubs in `src/platform/` report it as unsupported, so
-  `--snap`, `--filmstrip` and editor picking do nothing there.
+- GPU readback (`RendererReadback`) exists for Metal and D3D11. Linux's
+  OpenGL backend still reports it as unsupported, so `--snap`, `--filmstrip`
+  and editor picking do nothing there. Windows readback is tested on WARP.
 - The editor's window resize is macOS-only; elsewhere the window keeps its
   size (`src/platform/editorplatform_stub.cpp`).
 - Windows and Linux builds are compiled and unit-tested on every C++ change,

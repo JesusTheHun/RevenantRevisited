@@ -2678,6 +2678,8 @@ SOKOL_GFX_API_DECL void sg_discard_context(sg_context ctx_id);
 
 /* D3D11: return ID3D11Device */
 SOKOL_GFX_API_DECL const void* sg_d3d11_device(void);
+/* D3D11: borrowed ID3D11Texture2D for a valid 2D image, or zero. */
+SOKOL_GFX_API_DECL const void* sg_d3d11_query_image_handle(sg_image img);
 
 /* Metal: return __bridge-casted MTLDevice */
 SOKOL_GFX_API_DECL const void* sg_mtl_device(void);
@@ -16424,6 +16426,17 @@ SOKOL_API_IMPL const void* sg_d3d11_device(void) {
 #if defined(SOKOL_D3D11)
     return (const void*) _sg.d3d11.dev;
 #else
+    return 0;
+#endif
+}
+
+SOKOL_API_IMPL const void* sg_d3d11_query_image_handle(sg_image img_id) {
+#if defined(SOKOL_D3D11)
+    if (!_sg.valid) return 0;
+    _sg_image_t* img = _sg_lookup_image(&_sg.pools, img_id.id);
+    return img && img->slot.state == SG_RESOURCESTATE_VALID ? img->d3d11.tex2d : 0;
+#else
+    (void)img_id;
     return 0;
 #endif
 }
