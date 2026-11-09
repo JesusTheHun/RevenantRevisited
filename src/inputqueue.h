@@ -77,6 +77,8 @@ class TInputQueue
     // A session's start: nothing queued, nothing held, the pointer at
     // (x, y) -- the protocol's starting state (PROTOCOL.md §2).
     void Reset(int32_t x, int32_t y);
+    // Preserve held input when the game canvas changes size.
+    void RescalePointer(int32_t oldWidth, int32_t oldHeight, int32_t newWidth, int32_t newHeight);
 
   private:
     struct SState

@@ -26,6 +26,9 @@
 #include "renderer.h"
 #include "renderer_readback.h"
 #include "revenant.h"
+#include "gamecanvas.h"
+#include "inputqueue.h"
+#include "screen.h"
 
 #include <algorithm>
 
@@ -47,8 +50,9 @@ bool TDisplay::Initialize(int32_t dwidth, int32_t dheight, int32_t /*dbitsperpix
     if (backbuffer)
         return true;
 
-    width  = dwidth;
-    height = dheight;
+    const SGameCanvas canvas = SGameCanvas::ForWindow(dwidth, dheight, !Editor);
+    width = canvas.width;
+    height = canvas.height;
     format = SG_PIXELFORMAT_RGBA8;
 
     // ---- sokol_gfx context ------------------------------------------------
@@ -147,6 +151,24 @@ bool TDisplay::Initialize(int32_t dwidth, int32_t dheight, int32_t /*dbitsperpix
     }
 
     return true;
+}
+
+void TDisplay::UpdateCanvas(int32_t windowWidth, int32_t windowHeight)
+{
+    if (!backbuffer || overlay_pass_open || windowWidth <= 0 || windowHeight <= 0) return;
+    const SGameCanvas canvas = SGameCanvas::ForWindow(windowWidth, windowHeight, !Editor);
+    if (width == canvas.width && height == canvas.height) return;
+    const int32_t oldWidth = width, oldHeight = height;
+    width = canvas.width;
+    height = canvas.height;
+    delete backbuffer;
+    backbuffer = new TSurface(width, height, SG_PIXELFORMAT_RGBA8, SG_FILTER_NEAREST);
+    frontbuffer = backbuffer;
+    Renderer->ResizeTargets(width, height);
+    InputQueue.RescalePointer(oldWidth, oldHeight, width, height);
+    Reset();
+    if (CurrentScreen) CurrentScreen->Redraw();
+    log_info("[video] HUD canvas %dx%d for window %dx%d", width, height, windowWidth, windowHeight);
 }
 
 bool TDisplay::Close()

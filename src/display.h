@@ -70,6 +70,8 @@ class TDisplay : public TSurface
     // Brings up the sokol_gfx context, builds the TRenderer core engine,
     // wires up ImGui, and allocates the backbuffer/front/z TSurfaces.
     bool Initialize(int32_t dwidth, int32_t dheight, int32_t dbitsperpixel);
+    // Called between frames, including after resize and fullscreen changes.
+    void UpdateCanvas(int32_t windowWidth, int32_t windowHeight);
     // Tears down everything Initialize brought up (including the TRenderer).
     virtual bool Close();
     // Restore after alt-tab -- legacy stub on sokol.

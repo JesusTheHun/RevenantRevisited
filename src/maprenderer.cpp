@@ -111,9 +111,8 @@ constexpr float kSectorDepthFarWU  = 16384.0f;
 static SMapCameraViewport ComputeMapCameraViewport(int32_t viewport_w, int32_t viewport_h)
 {
     // The gameplay camera is authored against the classic 640x480 view.
-    // Higher render resolutions cover the framebuffer with that virtual view
-    // instead of expanding world coverage and changing the ortho camera scale.
-    // Non-4:3 modes crop one axis; they must not reveal extra world.
+    // The HUD canvas scales with window height; widescreen expands horizontal
+    // world coverage while keeping the artwork and camera proportional.
     //
     // The scale comes from the screen, not from the viewport: retail's map
     // pane is a window onto the 640x480 screen, drawn 1:1, which the HUD's
@@ -128,7 +127,7 @@ static SMapCameraViewport ComputeMapCameraViewport(int32_t viewport_w, int32_t v
     const int32_t screen_h = Display.IsActive() ? Display.Height() : viewport_h;
     const float sx = float(screen_w) / float(WIDTH);
     const float sy = float(screen_h) / float(HEIGHT);
-    v.scale = (std::max)(0.0001f, (std::max)(sx, sy));
+    v.scale = (std::max)(0.0001f, (std::min)(sx, sy));
     v.offset_x = (float(viewport_w) - float(WIDTH) * v.scale) * 0.5f;
     v.offset_y = (float(viewport_h) - float(HEIGHT) * v.scale) * 0.5f;
     return v;

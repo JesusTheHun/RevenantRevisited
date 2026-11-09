@@ -1577,6 +1577,28 @@ bool TRenderer::Initialize(int32_t dwidth, int32_t dheight)
     if (width > 0)
         return true;
 
+    CreateRenderTargets(dwidth, dheight);
+
+    InitCompositePipeline();
+    InitTilePipeline();
+    InitMeshPipeline();
+    InitAOPipeline();
+    InitShadowPipeline();
+    InitLightPipeline();
+    InitFxPipeline();
+
+    return true;
+}
+
+void TRenderer::ResizeTargets(int32_t w, int32_t h)
+{
+    if (w <= 0 || h <= 0 || (w == width && h == height)) return;
+    DestroyRenderTargets();
+    CreateRenderTargets(w, h);
+}
+
+void TRenderer::CreateRenderTargets(int32_t dwidth, int32_t dheight)
+{
     width  = dwidth;
     height = dheight;
 
@@ -1688,15 +1710,36 @@ bool TRenderer::Initialize(int32_t dwidth, int32_t dheight)
     // Reserved for a depth-only prepass in Phase 3.
     depth_pass = {};
 
-    InitCompositePipeline();
-    InitTilePipeline();
-    InitMeshPipeline();
-    InitAOPipeline();
-    InitShadowPipeline();
-    InitLightPipeline();
-    InitFxPipeline();
+}
 
-    return true;
+void TRenderer::DestroyRenderTargets()
+{
+    ++targetGeneration;
+    if (default_pass.id) { sg_destroy_pass(default_pass); default_pass = {}; }
+    if (lit_pass.id)     { sg_destroy_pass(lit_pass);     lit_pass     = {}; }
+    if (helper_pass.id)  { sg_destroy_pass(helper_pass);  helper_pass  = {}; }
+    if (fx_pass.id)      { sg_destroy_pass(fx_pass);      fx_pass      = {}; }
+    if (ao_pass.id)      { sg_destroy_pass(ao_pass);      ao_pass      = {}; }
+    if (shadow_pass.id)  { sg_destroy_pass(shadow_pass);  shadow_pass  = {}; }
+    if (shadow_blur_pass.id) { sg_destroy_pass(shadow_blur_pass); shadow_blur_pass = {}; }
+
+    if (color_target.id)   { sg_destroy_image(color_target);   color_target   = {}; }
+    if (depth_target.id)   { sg_destroy_image(depth_target);   depth_target   = {}; }
+    if (normal_target.id)  { sg_destroy_image(normal_target);  normal_target  = {}; }
+    if (scene_z_target.id) { sg_destroy_image(scene_z_target); scene_z_target = {}; }
+    if (id_target.id)      { sg_destroy_image(id_target);      id_target      = {}; }
+    if (ao_target.id)      { sg_destroy_image(ao_target);      ao_target      = {}; }
+    if (shadow_target.id)  { sg_destroy_image(shadow_target);  shadow_target  = {}; }
+    if (shadow_blur_target.id) { sg_destroy_image(shadow_blur_target); shadow_blur_target = {}; }
+    if (lit_target.id)     { sg_destroy_image(lit_target);     lit_target     = {}; }
+
+    width = height = 0;
+    shadow_width = shadow_height = 0;
+    color_target_dirty = false;
+    lit_target_dirty   = false;
+    any_target_ever_written = false;
+    idProbeLatestValid = false;
+    idProbeRequested = false;
 }
 
 void TRenderer::Shutdown()
@@ -1723,28 +1766,7 @@ void TRenderer::Shutdown()
     texture_by_key.clear();
     white_texture = kInvalidTexture;
 
-    if (default_pass.id) { sg_destroy_pass(default_pass); default_pass = {}; }
-    if (lit_pass.id)     { sg_destroy_pass(lit_pass);     lit_pass     = {}; }
-    if (helper_pass.id)  { sg_destroy_pass(helper_pass);  helper_pass  = {}; }
-    if (fx_pass.id)      { sg_destroy_pass(fx_pass);      fx_pass      = {}; }
-    if (ao_pass.id)      { sg_destroy_pass(ao_pass);      ao_pass      = {}; }
-    if (shadow_pass.id)  { sg_destroy_pass(shadow_pass);  shadow_pass  = {}; }
-    if (shadow_blur_pass.id) { sg_destroy_pass(shadow_blur_pass); shadow_blur_pass = {}; }
-
-    if (color_target.id)   { sg_destroy_image(color_target);   color_target   = {}; }
-    if (depth_target.id)   { sg_destroy_image(depth_target);   depth_target   = {}; }
-    if (normal_target.id)  { sg_destroy_image(normal_target);  normal_target  = {}; }
-    if (scene_z_target.id) { sg_destroy_image(scene_z_target); scene_z_target = {}; }
-    if (id_target.id)      { sg_destroy_image(id_target);      id_target      = {}; }
-    if (ao_target.id)      { sg_destroy_image(ao_target);      ao_target      = {}; }
-    if (shadow_target.id)  { sg_destroy_image(shadow_target);  shadow_target  = {}; }
-    if (shadow_blur_target.id) { sg_destroy_image(shadow_blur_target); shadow_blur_target = {}; }
-    if (lit_target.id)     { sg_destroy_image(lit_target);     lit_target     = {}; }
-
-    width = height = 0;
-    shadow_width = shadow_height = 0;
-    color_target_dirty = false;
-    lit_target_dirty   = false;
+    DestroyRenderTargets();
 }
 
 // *************************************************************************
@@ -2602,8 +2624,8 @@ void TRenderer::DrawTextureFit(TTextureHandle texture)
     const sg_image img = TextureImage(texture);
     if (!img.id) return;
 
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     if (target_w <= 0 || target_h <= 0) return;
 
     // Aspect-preserving "contain" fit, centered; remainder stays whatever the
@@ -2734,6 +2756,10 @@ void TRenderer::ResolveIdProbe()
         if (!RendererReadback::PollReadRect(slot, rgba, int32_t(sizeof(rgba))))
             continue;
         r.active = false;
+        // Drain old copies after a resize without interpreting them against
+        // the new target's dimensions or object table.
+        if (r.generation != targetGeneration)
+            continue;
         int32_t rx = 0, ry = 0, rw = 0, rh = 0;
         if (!IdProbeRect(r.probe.x, r.probe.y, rx, ry, rw, rh))
             continue;
@@ -2757,6 +2783,7 @@ void TRenderer::ResolveIdProbe()
         {
             r.active = true;
             r.probe  = idProbeRequest;
+            r.generation = targetGeneration;
         }
         return;
     }
@@ -4908,8 +4935,8 @@ TTextureHandle TRenderer::BitmapAsTexture(PTBitmap bm, EBitmapDecode decode)
 void TRenderer::DrawBitmap(PTBitmap bm, int32_t x, int32_t y, EBitmapDecode decode)
 {
     if (!bm) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     SBitmapAtlasSlice slice;
     if (LookupUIBitmapAtlasSlice(bm, decode, &slice))
     {
@@ -4933,8 +4960,8 @@ void TRenderer::DrawBitmapSubrect(PTBitmap bm,
                                   int32_t src_w, int32_t src_h)
 {
     if (!bm || src_w <= 0 || src_h <= 0) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     SBitmapAtlasSlice slice;
     if (LookupUIBitmapAtlasSlice(bm, EBitmapDecode::Pixels, &slice))
     {
@@ -4956,8 +4983,8 @@ void TRenderer::DrawBitmapTinted(PTBitmap bm, int32_t x, int32_t y,
                                  float tr, float tg, float tb, float ta)
 {
     if (!bm) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     SBitmapAtlasSlice slice;
     if (LookupUIBitmapAtlasSlice(bm, EBitmapDecode::Pixels, &slice))
     {
@@ -4984,8 +5011,8 @@ void TRenderer::DrawBitmapSubrectTinted(PTBitmap bm,
                                         float tr, float tg, float tb, float ta)
 {
     if (!bm || src_w <= 0 || src_h <= 0) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     SBitmapAtlasSlice slice;
     if (LookupUIBitmapAtlasSlice(bm, EBitmapDecode::Pixels, &slice))
     {
@@ -5344,8 +5371,8 @@ void TRenderer::DrawSurface(TSurface* surf, int32_t x, int32_t y)
     if (!surf) return;
     const sg_image img = surf->GetSGImage();
     if (!img.id) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     const int32_t sw = surf->Width();
     const int32_t sh = surf->Height();
     CompositeSwapchain(img, x, y, sw, sh, target_w, target_h,
@@ -5358,8 +5385,8 @@ void TRenderer::DrawSurfaceTinted(TSurface* surf, int32_t x, int32_t y,
     if (!surf) return;
     const sg_image img = surf->GetSGImage();
     if (!img.id) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     const int32_t sw = surf->Width();
     const int32_t sh = surf->Height();
     CompositeSwapchainTinted(img, x, y, sw, sh, target_w, target_h,
@@ -5377,7 +5404,7 @@ void TRenderer::DrawSurfaceSubrectTinted(TSurface* surf,
     const sg_image img = surf->GetSGImage();
     if (!img.id) return;
     CompositeSwapchainTinted(img, dst_x, dst_y, src_w, src_h,
-                             sapp_width(), sapp_height(),
+                             width, height,
                              src_x, src_y, src_w, src_h,
                              surf->Width(), surf->Height(),
                              tr * ta, tg * ta, tb * ta, ta, ECompositeAlpha::Premultiplied);
@@ -5451,8 +5478,8 @@ void TRenderer::DrawSolidRect(int32_t x, int32_t y, int32_t w, int32_t h,
                          (uint32_t(b) <<  8) |  uint32_t(a);
     const sg_image img = GetOrCreateSolidColorImage(key);
     if (!img.id) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     CompositeSwapchain(img, x, y, w, h, target_w, target_h,
                        0, 0, 1, 1, 1, 1);
 }
@@ -5462,8 +5489,8 @@ void TRenderer::FillScreen(float r, float g, float b, float a)
     if (a <= 0.0f) return;
     const sg_image img = GetOrCreateSolidColorImage(0xFFFFFFFFu);
     if (!img.id) return;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
     CompositeSwapchainTinted(img, 0, 0, target_w, target_h, target_w, target_h,
                              0, 0, 1, 1, 1, 1, r, g, b, a);
 }
@@ -5502,8 +5529,8 @@ void TRenderer::DrawNineSlice(PTBitmap bm,
 
     const int32_t sw = bm->width;
     const int32_t sh = bm->height;
-    const int32_t target_w = sapp_width();
-    const int32_t target_h = sapp_height();
+    const int32_t target_w = width;
+    const int32_t target_h = height;
 
     // Clamp insets to half the source (and ensure non-negative) so any
     // crazy caller input stays sane. Same clamp applies to dest pieces.

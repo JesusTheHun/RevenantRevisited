@@ -97,6 +97,24 @@ void TInputQueue::Drain(TScreen* screen)
     }
 }
 
+void TInputQueue::RescalePointer(int32_t oldWidth, int32_t oldHeight, int32_t newWidth, int32_t newHeight)
+{
+    if (oldWidth <= 0 || oldHeight <= 0) return;
+    const auto x = [&](int32_t v) { return int32_t(int64_t(v) * newWidth / oldWidth); };
+    const auto y = [&](int32_t v) { return int32_t(int64_t(v) * newHeight / oldHeight); };
+    queued.x = x(queued.x);
+    queued.y = y(queued.y);
+    cursorx = x(cursorx);
+    cursory = y(cursory);
+    for (SInputEvent& event : pending)
+    {
+        // Key/character coordinates are unused; pointer and wheel events
+        // carry their position here.
+        event.x = x(event.x);
+        event.y = y(event.y);
+    }
+}
+
 void TInputQueue::Reset(int32_t x, int32_t y)
 {
     pending.clear();

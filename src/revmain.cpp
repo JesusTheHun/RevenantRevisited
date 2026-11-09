@@ -38,6 +38,7 @@
 #include "3dscene.h"
 #include "bitmap.h"
 #include "display.h"
+#include "gamecanvas.h"
 #include "graphics.h"
 #include "module.h"
 #include "playscreen.h"
@@ -2998,6 +2999,8 @@ static void AppFrame()
     if (!SystemInitialized || Closing)
         return;
 
+    Display.UpdateCanvas(sapp_width(), sapp_height());
+
     // The frame's first time step (turbo's further ones begin in the
     // simulation loop below).
     const int32_t steps = Shadow.Active() ? Shadow.StepsThisFrame() : 1;
@@ -3235,6 +3238,9 @@ static void AppEvent(const sapp_event* ev)
         return;
     }
 
+    const SGameCanvas canvas{Display.Width(), Display.Height()};
+    const int32_t mouseX = canvas.MouseX(ev->mouse_x, sapp_width());
+    const int32_t mouseY = canvas.MouseY(ev->mouse_y, sapp_height());
     switch (ev->type)
     {
       case SAPP_EVENTTYPE_KEY_DOWN:
@@ -3300,7 +3306,7 @@ static void AppEvent(const sapp_event* ev)
         if (imgui_mouse && !sector_test_drag) break;
         // A frame can see dozens of moves (trackpads fire at 120–500 Hz);
         // the queue keeps the latest of a run of them.
-        InputQueue.PushMove((int32_t)ev->mouse_x, (int32_t)ev->mouse_y);
+        InputQueue.PushMove(mouseX, mouseY);
         break;
       }
 
@@ -3322,15 +3328,13 @@ static void AppEvent(const sapp_event* ev)
           default: break;
         }
         if (button)
-            InputQueue.PushButton(button, down, (int32_t)ev->mouse_x, (int32_t)ev->mouse_y);
+            InputQueue.PushButton(button, down, mouseX, mouseY);
         break;
       }
 
       case SAPP_EVENTTYPE_RESIZED:
       {
-        // TODO(port): TDisplay is hard-coded WIDTH x HEIGHT. When the
-        // renderer learns to cope with resize we should forward new
-        // dimensions here.
+        // Canvas and render-target updates run at the next frame boundary.
         break;
       }
 

@@ -625,6 +625,7 @@ public:
     // creates every pipeline, and sets up ImGui. Assumes sg_setup() has
     // already run (TDisplay::Init drives that).
     bool Initialize(int32_t width, int32_t height);
+    void ResizeTargets(int32_t width, int32_t height);
     // Tear down pipelines, shaders, RTs. Leaves sg_shutdown to TDisplay.
     void Shutdown();
 
@@ -1278,6 +1279,8 @@ public:
     [[nodiscard]] int32_t  GBufPad()     const { return kGBufPad; }
 
 private:
+    void CreateRenderTargets(int32_t width, int32_t height);
+    void DestroyRenderTargets();
     // ---- HUD state (DrawBitmap/DrawSurface/AddHud/DrawHud) --------------
     // Fallback PTBitmap -> one-off GPU texture. Atlased bitmap draws are owned
     // by bitmapatlas.cpp; this cache is used only for late/missed bitmaps.
@@ -1523,7 +1526,8 @@ private:
 
     // Id probe state (RequestIdProbe / ResolveIdProbe): this frame's request,
     // the copies in flight (one per readback slot) and the newest result.
-    struct SIdProbeRead { bool active = false; SIdProbe probe; };
+    struct SIdProbeRead { bool active = false; SIdProbe probe; uint64_t generation = 0; };
+    uint64_t targetGeneration = 0;
     bool         idProbeRequested = false;
     SIdProbe     idProbeRequest;
     SIdProbeRead idProbeReads[2];

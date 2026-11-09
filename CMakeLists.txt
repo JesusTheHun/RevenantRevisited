@@ -454,6 +454,9 @@ target_include_directories(test_audio_decode PRIVATE
 target_compile_definitions(test_audio_decode PRIVATE SOKOL_${SOKOL_BACKEND})
 target_link_libraries(test_audio_decode PRIVATE GTest::gtest_main)
 
+add_executable(test_gamecanvas tools/test_gamecanvas.cpp)
+target_link_libraries(test_gamecanvas PRIVATE GTest::gtest_main)
+
 # ----------------------------------------------------------------------------
 # revsmk — clean-room Smacker (SMK2) decoder. Self-contained (C++ stdlib only),
 # so it's a standalone static lib the engine and the smkdump tool both link.
@@ -539,6 +542,11 @@ foreach(test IN ITEMS
     test_shadowplan)
   gtest_discover_tests(${test} TEST_PREFIX "${test}." DISCOVERY_MODE PRE_TEST)
 endforeach()
+
+
+if(TARGET test_gamecanvas)
+  gtest_discover_tests(test_gamecanvas TEST_PREFIX "test_gamecanvas." DISCOVERY_MODE PRE_TEST)
+endif()
 
 # Source-slice tests: each compiles a function cut from src/ into a small
 # fixture with clang++ and runs it. POSIX hosts only.
