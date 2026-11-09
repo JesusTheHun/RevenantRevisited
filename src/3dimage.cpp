@@ -3951,7 +3951,19 @@ void T3DAnimator::SetPoisonGround(std::function<int(int,int,int)> query)
 bool T3DAnimator::PartSysOwnsObject(int32_t object) const
 {
     if (!partsys_controllers) return false;
-    if (partsys_controllers->unsupported) return true;
+    if (partsys_controllers->unsupported)
+    {
+        // An item can have both an authored resting mesh and optional
+        // particle templates (Misc\Coin.I3D). An unsupported controller
+        // owns the templates, not the visible pile. Keep effect owners
+        // fail-closed, and never expose an unresolved item prototype.
+        if (!inst || !inst->IsInventoryItem()) return true;
+        const T3DImagery* imagery = Get3DImagery();
+        if (!imagery) return true;
+        for (const auto& track : imagery->partsys_tracks)
+            if (track.prototype < 0 || track.prototype == object) return true;
+        return false;
+    }
     for (const auto& controller : partsys_controllers->controllers)
         if (controller.track.prototype == object) return true;
     return false;

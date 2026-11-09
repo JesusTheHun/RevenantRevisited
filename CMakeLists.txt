@@ -433,6 +433,15 @@ add_executable(test_shadowplan
   src/shadow/shadowplan.cpp)
 target_link_libraries(test_shadowplan PRIVATE GTest::gtest_main)
 
+# Item base meshes remain independent of unsupported particle templates.
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/partsys_ownership_fixture.cpp
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/partsys_ownership_fixture.py
+          --output ${CMAKE_CURRENT_BINARY_DIR}/partsys_ownership_fixture.cpp
+  DEPENDS tools/partsys_ownership_fixture.py tools/test_partsys_ownership.cpp src/3dimage.cpp
+  VERBATIM)
+add_executable(test_partsys_ownership ${CMAKE_CURRENT_BINARY_DIR}/partsys_ownership_fixture.cpp)
+target_link_libraries(test_partsys_ownership PRIVATE GTest::gtest_main)
+
 # Sound file decoding and lengths (audio_backend's decoders; no playback
 # device). miniz reads the shipped voices when REVENANT_DATA_PATH is set.
 add_executable(test_audio_decode
@@ -531,6 +540,7 @@ foreach(test IN ITEMS
     test_defio
     test_defwidget
     test_particlefx
+    test_partsys_ownership
     test_nodeinst
     test_playerstats
     test_props
