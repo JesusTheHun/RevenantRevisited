@@ -454,6 +454,14 @@ target_include_directories(test_audio_decode PRIVATE
 target_compile_definitions(test_audio_decode PRIVATE SOKOL_${SOKOL_BACKEND})
 target_link_libraries(test_audio_decode PRIVATE GTest::gtest_main)
 
+add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/run_mode_fixture.cpp
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/run_mode_fixture.py
+          --output ${CMAKE_CURRENT_BINARY_DIR}/run_mode_fixture.cpp
+  DEPENDS tools/run_mode_fixture.py src/character.cpp
+  VERBATIM)
+add_executable(test_run_mode ${CMAKE_CURRENT_BINARY_DIR}/run_mode_fixture.cpp)
+target_link_libraries(test_run_mode PRIVATE GTest::gtest_main)
+
 # ----------------------------------------------------------------------------
 # revsmk — clean-room Smacker (SMK2) decoder. Self-contained (C++ stdlib only),
 # so it's a standalone static lib the engine and the smkdump tool both link.
@@ -539,6 +547,11 @@ foreach(test IN ITEMS
     test_shadowplan)
   gtest_discover_tests(${test} TEST_PREFIX "${test}." DISCOVERY_MODE PRE_TEST)
 endforeach()
+
+
+if(TARGET test_run_mode)
+  gtest_discover_tests(test_run_mode TEST_PREFIX "test_run_mode." DISCOVERY_MODE PRE_TEST)
+endif()
 
 # Source-slice tests: each compiles a function cut from src/ into a small
 # fixture with clang++ and runs it. POSIX hosts only.

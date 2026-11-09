@@ -476,10 +476,9 @@ class TCharacter : public TComplexObject
     bool IsSneakMode() { if (root && root->Is("sneak")) return true; return false; }
       // Returns whether character is in sneak mode
     bool IsMoving()
-        { return doing && 
-                 doing->action == ACTION_MOVE || 
-                 doing->action == ACTION_COMBATMOVE ||
-                 doing->action == ACTION_BOWMOVE; }
+        { return doing && (doing->action == ACTION_MOVE ||
+                           doing->action == ACTION_COMBATMOVE ||
+                           doing->action == ACTION_BOWMOVE); }
       // Returns true if character is doing a moving action (result of calling Go())
     bool IsGoto() 
         { return IsMoving() && (doing->target.x != 0 || doing->target.y != 0 || doing->target.z != 0); }

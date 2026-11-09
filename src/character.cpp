@@ -4145,6 +4145,8 @@ bool TCharacter::SetRunMode()
         strcpy(aniname, StName(GetCombatRoot(), "run"));
     else if (root->Is(ACTION_BOW))
         strcpy(aniname, StName(GetBowRoot(), "run"));
+    else
+        return false;
 
     if (!HasActionAni(aniname))
         return false;
@@ -4157,6 +4159,8 @@ bool TCharacter::SetRunMode()
         char *name;
         if (HasActionAni(StName(aniname, "r")))
             name = StName(aniname, "r");
+        else if (HasActionAni(StName(aniname, "f")))
+            name = StName(aniname, "f");
         else
             name = StName(aniname, "l");
         ab = new TActionBlock(*doing, name, doing->action);
