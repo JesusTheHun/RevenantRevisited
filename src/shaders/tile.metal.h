@@ -486,7 +486,7 @@ fragment fs_out _main(vs_out in [[stage_in]],
         in.pos.y >= albedo_pad && in.pos.y < (gbuf_size.y - albedo_pad);
     if (p.camera.w <= 0.5 && c.a < 0.01) discard_fragment();
     if (!projected_heightfield && p.camera.w > 0.5 && c.a < 0.01) discard_fragment();
-    if (!projected_heightfield && !tile_depth_valid(hit_uv, depth_tex)) discard_fragment();
+    // Flat sprites have valid zero depth; their decoded alpha above is coverage.
     if (projected_heightfield) c.a = 1.0;
     if (p.debug.x > 1.5) {
         c.rgb = hit_valid_depth ? float3(0.1, 0.2, 1.0) : float3(0.0, 1.0, 0.1);

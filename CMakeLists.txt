@@ -442,6 +442,11 @@ add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/partsys_ownership_fixture.
 add_executable(test_partsys_ownership ${CMAKE_CURRENT_BINARY_DIR}/partsys_ownership_fixture.cpp)
 target_link_libraries(test_partsys_ownership PRIVATE GTest::gtest_main)
 
+if(WIN32)
+  add_executable(test_d3d11_tiles tools/test_d3d11_tiles.cpp)
+  target_link_libraries(test_d3d11_tiles PRIVATE GTest::gtest_main d3d11 d3dcompiler)
+endif()
+
 # Sound file decoding and lengths (audio_backend's decoders; no playback
 # device). miniz reads the shipped voices when REVENANT_DATA_PATH is set.
 add_executable(test_audio_decode
@@ -516,6 +521,9 @@ endif()
 # ----------------------------------------------------------------------------
 enable_testing()
 include(GoogleTest)
+if(TARGET test_d3d11_tiles)
+  gtest_discover_tests(test_d3d11_tiles TEST_PREFIX "test_d3d11_tiles." DISCOVERY_MODE PRE_TEST)
+endif()
 
 foreach(test IN ITEMS
     test_anim_system

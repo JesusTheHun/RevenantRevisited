@@ -83,16 +83,6 @@ struct fs_out {
     float4 obj_id  : SV_Target3;
     float  depth   : SV_Depth;
 };
-bool tile_depth_valid(float2 uv) {
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-        return false;
-    uint w, h;
-    depth_tex.GetDimensions(w, h);
-    int2 p = int2(clamp(uv * float2(float(w), float(h)),
-                         float2(0.0, 0.0),
-                         float2(float(w - 1), float(h - 1))));
-    return abs(depth_tex.Load(int3(p, 0)).r) > 0.0001;
-}
 float tile_depth_read(float2 uv) {
     uint w, h;
     depth_tex.GetDimensions(w, h);
@@ -109,8 +99,8 @@ fs_out main_ps(vs_out in_) {
     bool present_albedo =
         in_.pos.x >= albedo_pad && in_.pos.x < (gbuf_size.x - albedo_pad) &&
         in_.pos.y >= albedo_pad && in_.pos.y < (gbuf_size.y - albedo_pad);
+    // Decoded alpha is coverage; flat sprites have valid zero local depth.
     if (c.a < 0.01) discard;
-    if (!tile_depth_valid(in_.uv)) discard;
     float zraw = tile_depth_read(in_.uv);
     float d    = zparams.x + zraw * zparams.y;
     if (d < 0.0 || d > 1.0) discard;

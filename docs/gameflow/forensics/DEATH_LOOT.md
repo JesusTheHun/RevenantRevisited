@@ -234,6 +234,18 @@ six ("Get Torch", "Torch Picked up." … "50 Gold Picked up.") and then
 "There is nothing to get". The Short Sword on the floor now lies flat
 (it stood on its edge with the authored pose).
 
+Ground rendering (2026-11-09): an unsupported particle controller no
+longer suppresses an inventory item's authored base meshes. Coin.I3D can
+show its resting pile while its referenced particle prototypes remain
+hidden. Unresolved prototypes and unsupported effect owners still fail
+closed; no additional particle controller is enabled.
+
+Flat 2D items such as Fish.I2D have no depth bitmap. Their uploaded local
+depth is correctly zero. The ordinary tile pass uses decoded color alpha
+for coverage, rather than rejecting zero depth a second time. Authored
+transparent depth pixels already have zero alpha at upload. Metal's
+projected heightfield intersection keeps its existing validity rules.
+
 Not yet ported (phase two): the four trailing ghosts (§6) and the landing
 flash (the emissive redraw and the scene flash `0x414d70`). To check
 against retail: the resting pose and the flight in the dosbox-x lab.

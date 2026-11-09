@@ -83,13 +83,6 @@ layout(location = 0) out vec4 out_albedo;
 layout(location = 1) out vec4 out_normal;
 layout(location = 2) out vec4 out_scene_z;
 layout(location = 3) out vec4 out_obj_id;
-bool tile_depth_valid(vec2 uv) {
-    if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0)
-        return false;
-    ivec2 ts = textureSize(depth_tex, 0);
-    ivec2 p = clamp(ivec2(uv * vec2(ts)), ivec2(0), ts - ivec2(1));
-    return abs(texelFetch(depth_tex, p, 0).r) > 0.0001;
-}
 float tile_depth_read(vec2 uv) {
     ivec2 ts = textureSize(depth_tex, 0);
     ivec2 p = clamp(ivec2(uv * vec2(ts)), ivec2(0), ts - ivec2(1));
@@ -102,8 +95,8 @@ void main() {
     bool present_albedo =
         gl_FragCoord.x >= albedo_pad && gl_FragCoord.x < (gbuf_size.x - albedo_pad) &&
         gl_FragCoord.y >= albedo_pad && gl_FragCoord.y < (gbuf_size.y - albedo_pad);
+    // Decoded alpha is coverage; flat sprites have valid zero local depth.
     if (c.a < 0.01) discard;
-    if (!tile_depth_valid(v_uv)) discard;
     float zraw = tile_depth_read(v_uv);
     float d    = zparams.x + zraw * zparams.y;
     if (d < 0.0 || d > 1.0) discard;
